@@ -14,7 +14,7 @@
     "test:concurrency": "tsx tests/concurrency.test.ts"
   },
   "dependencies": {
-    "bcrypt": "^5.1.1",
+    "bcrypt": "^6.0.0",
     "cloudinary": "^2.5.1",
     "cors": "^2.8.5",
     "dotenv": "^16.4.7",
@@ -23,11 +23,11 @@
     "helmet": "^8.0.0",
     "jsonwebtoken": "^9.0.2",
     "mysql2": "^3.12.0",
-    "nodemailer": "^6.10.0",
+    "nodemailer": "^10.1.4",
     "qrcode": "^1.5.4",
     "socket.io": "^4.8.4",
     "uuid": "^11.1.0",
-    "zod": "^3.24.2"
+    "zod": "^4.6.6"
   },
   "devDependencies": {
     "@types/bcrypt": "^5.0.2",
