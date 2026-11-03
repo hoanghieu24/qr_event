@@ -698,7 +698,7 @@ export class TenantsService {
              q.is_enabled, q.can_invite, q.can_approve, q.can_scan, q.can_view_report
       FROM staff_event_quotas q
       JOIN users u ON u.id = q.staff_id
-      JOIN tenant_users tu ON tu.user_id = u.id AND tu.tenant_id = ? AND tu.role = 'TEAM'
+      JOIN tenant_users tu ON tu.user_id = u.id AND tu.tenant_id = ?
       WHERE q.event_id = ?
       ORDER BY u.name
     `, [tenantId, eventId]);
@@ -720,8 +720,8 @@ export class TenantsService {
       if (events[0].status !== 'PUBLISHED') throw new Error('Chỉ có thể phân công nhân sự khi sự kiện đang mở.');
       const [members]: any = await conn.query(
         `SELECT u.id FROM users u
-         JOIN tenant_users tu ON tu.user_id = u.id AND tu.tenant_id = ? AND tu.role = 'TEAM'
-         WHERE u.id = ? AND u.type = 'STAFF' AND u.status = 'ACTIVE'`,
+         JOIN tenant_users tu ON tu.user_id = u.id AND tu.tenant_id = ?
+         WHERE u.id = ? AND u.status = 'ACTIVE'`,
         [tenantId, data.staff_id]
       );
       if (!members.length) throw new Error('Nhân sự không thuộc khách thuê này hoặc đang bị khóa.');
@@ -798,7 +798,7 @@ export class TenantsService {
     await this.requireTenantEvent(tenantId, eventId);
     await query(`
       DELETE q FROM staff_event_quotas q
-      JOIN tenant_users tu ON tu.user_id = q.staff_id AND tu.tenant_id = ? AND tu.role = 'TEAM'
+      JOIN tenant_users tu ON tu.user_id = q.staff_id AND tu.tenant_id = ?
       WHERE q.event_id = ? AND q.staff_id = ?
     `, [tenantId, eventId, staffId]);
     await query(`UPDATE invite_links SET status = 'CLOSED' WHERE event_id = ? AND referrer_id = ? AND status = 'ACTIVE'`, [eventId, staffId]);

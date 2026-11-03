@@ -44,7 +44,10 @@ import {
   RefreshCw,
   Keyboard,
   Scale,
-  Send
+  Send,
+  Share2,
+  Maximize2,
+  Download
 } from 'lucide-vue-next';
 import QRCode from 'qrcode';
 
@@ -101,6 +104,7 @@ const staffQuota = ref<any>(null);
 const staffRegistrations = ref<any[]>([]);
 const staffInviteQrUrl = ref('');
 const copiedInviteLink = ref(false);
+const showZoomQrModal = ref(false);
 const loadingStaffData = ref(false);
 const approvalFilterStatus = ref<'ALL' | 'PENDING' | 'APPROVED' | 'REJECTED'>('ALL');
 const approvalSearch = ref('');
@@ -772,6 +776,25 @@ const copyStaffInviteLink = async () => {
   setTimeout(() => {
     copiedInviteLink.value = false;
   }, 2000);
+};
+
+const shareStaffInviteLink = async () => {
+  if (!staffInviteLink.value?.invite_url) return;
+  const eventName = staffSelectedEvent.value?.name || 'Sự kiện';
+  const url = staffInviteLink.value.invite_url;
+  if (typeof navigator !== 'undefined' && navigator.share) {
+    try {
+      await navigator.share({
+        title: `Thư mời tham dự: ${eventName}`,
+        text: `Trân trọng kính mời bạn tham gia ${eventName}. Đăng ký nhận vé QR tại: ${url}`,
+        url,
+      });
+    } catch (e) {
+      // User cancelled share dialog
+    }
+  } else {
+    await copyStaffInviteLink();
+  }
 };
 
 const approveStaffGuest = async (regId: number) => {
@@ -1669,7 +1692,7 @@ onBeforeUnmount(stopScanner);
       </div>
 
       <!-- Tab Switcher (Mời khách / Duyệt khách / Quét QR / Báo cáo / Tranh chấp) -->
-      <div class="flex items-center gap-0.5 sm:gap-1 bg-slate-100 p-1 rounded-xl border border-slate-200/80">
+      <div class="flex items-center gap-0.5 sm:gap-1 bg-slate-100 p-1 rounded-xl border border-slate-200/80 max-w-[calc(100vw-125px)] sm:max-w-none overflow-x-auto no-scrollbar">
         <button
           v-if="staffCanInvite"
           type="button"
@@ -1798,98 +1821,136 @@ onBeforeUnmount(stopScanner);
         </div>
 
         <!-- Quota & Stats Cards -->
-        <div class="grid grid-cols-2 sm:grid-cols-4 gap-3">
-          <div class="card p-4 bg-white rounded-2xl border border-slate-200 text-center">
+        <div class="grid grid-cols-2 sm:grid-cols-4 gap-2.5 sm:gap-3">
+          <div class="card p-3 sm:p-4 bg-white rounded-2xl border border-slate-200 text-center shadow-2xs">
             <span class="text-[10px] font-bold uppercase tracking-wider text-slate-400">Hạn mức mời</span>
-            <p class="text-2xl font-black text-slate-900 mt-1">{{ staffQuota?.max_invites ?? staffSelectedEvent?.my_max_invites ?? 50 }}</p>
+            <p class="text-xl sm:text-2xl font-black text-slate-900 mt-0.5 sm:mt-1">{{ staffQuota?.max_invites ?? staffSelectedEvent?.my_max_invites ?? 50 }}</p>
             <span class="text-[10px] text-slate-400">suất tối đa</span>
           </div>
-          <div class="card p-4 bg-white rounded-2xl border border-slate-200 text-center">
+          <div class="card p-3 sm:p-4 bg-white rounded-2xl border border-slate-200 text-center shadow-2xs">
             <span class="text-[10px] font-bold uppercase tracking-wider text-slate-400">Đã đăng ký</span>
-            <p class="text-2xl font-black text-primary-700 mt-1">{{ staffRegistrations.length }}</p>
+            <p class="text-xl sm:text-2xl font-black text-primary-700 mt-0.5 sm:mt-1">{{ staffRegistrations.length }}</p>
             <span class="text-[10px] text-primary-600">khách nhận link</span>
           </div>
-          <div class="card p-4 bg-white rounded-2xl border border-slate-200 text-center">
+          <div class="card p-3 sm:p-4 bg-white rounded-2xl border border-slate-200 text-center shadow-2xs">
             <span class="text-[10px] font-bold uppercase tracking-wider text-slate-400">Đã duyệt vé</span>
-            <p class="text-2xl font-black text-emerald-600 mt-1">{{ staffRegistrations.filter(r => r.status === 'APPROVED').length }}</p>
+            <p class="text-xl sm:text-2xl font-black text-emerald-600 mt-0.5 sm:mt-1">{{ staffRegistrations.filter(r => r.status === 'APPROVED').length }}</p>
             <span class="text-[10px] text-emerald-600">sẵn sàng tham gia</span>
           </div>
-          <div class="card p-4 bg-white rounded-2xl border border-slate-200 text-center">
+          <div class="card p-3 sm:p-4 bg-white rounded-2xl border border-slate-200 text-center shadow-2xs">
             <span class="text-[10px] font-bold uppercase tracking-wider text-slate-400">Đã Check-in</span>
-            <p class="text-2xl font-black text-indigo-600 mt-1">{{ staffRegistrations.filter(r => r.ticket_status === 'USED').length }}</p>
+            <p class="text-xl sm:text-2xl font-black text-indigo-600 mt-0.5 sm:mt-1">{{ staffRegistrations.filter(r => r.ticket_status === 'USED').length }}</p>
             <span class="text-[10px] text-indigo-500">đã vào cổng</span>
           </div>
         </div>
 
-        <!-- Link mời cá nhân & Mã QR chia sẻ -->
-        <div class="grid gap-6 md:grid-cols-2">
+        <!-- Link mời cá nhân & Mã QR chia sẻ (Tối ưu giao diện Mobile & Máy tính) -->
+        <div class="grid gap-4 sm:gap-6 md:grid-cols-2">
           <!-- Hộp Link Mời -->
-          <div class="card p-5 bg-white rounded-2xl border border-slate-200 shadow-xs flex flex-col justify-between space-y-4">
+          <div class="card p-4 sm:p-5 bg-white rounded-2xl border border-slate-200 shadow-xs flex flex-col justify-between space-y-4">
             <div>
-              <div class="flex items-center gap-2">
-                <div class="grid h-8 w-8 place-items-center rounded-lg bg-primary-100 text-primary-700">
+              <div class="flex items-center gap-2.5">
+                <div class="grid h-8 w-8 place-items-center rounded-lg bg-primary-100 text-primary-700 shrink-0">
                   <Link2 :size="16" />
                 </div>
                 <div>
                   <h3 class="font-bold text-slate-900 text-sm">Link mời tham dự cá nhân</h3>
-                  <p class="text-xs text-slate-500">Gửi link này cho khách qua Zalo, Messenger, SMS</p>
+                  <p class="text-[11px] sm:text-xs text-slate-500">Gửi link này cho khách qua Zalo, Messenger, SMS</p>
                 </div>
               </div>
 
-              <div class="mt-4 p-3 bg-slate-50 rounded-xl border border-slate-200">
-                <p class="text-xs font-mono text-slate-700 break-all select-all font-semibold">
+              <div class="mt-3.5 p-2.5 sm:p-3 bg-slate-50 rounded-xl border border-slate-200 flex items-center justify-between gap-2">
+                <p class="text-xs font-mono text-slate-700 break-all select-all font-semibold flex-1">
                   {{ staffInviteLink?.invite_url || 'Đang tạo link mời cá nhân...' }}
                 </p>
+                <button
+                  type="button"
+                  @click="copyStaffInviteLink"
+                  title="Sao chép link"
+                  class="p-2 rounded-lg bg-white border border-slate-200 text-slate-600 hover:text-primary-700 hover:border-primary-300 transition shrink-0 cursor-pointer shadow-2xs"
+                >
+                  <Check v-if="copiedInviteLink" :size="15" class="text-emerald-600" />
+                  <Copy v-else :size="15" />
+                </button>
               </div>
             </div>
 
-            <div class="flex flex-col sm:flex-row gap-2 pt-2 border-t border-slate-100">
+            <!-- Các nút thao tác trên Mobile & Desktop -->
+            <div class="grid grid-cols-1 sm:grid-cols-3 gap-2 pt-2 border-t border-slate-100">
               <button
                 type="button"
                 @click="copyStaffInviteLink"
                 :disabled="!staffInviteLink?.invite_url"
-                class="btn btn-primary flex-1 justify-center py-2.5 text-xs font-bold gap-1.5 cursor-pointer"
+                class="btn btn-primary justify-center py-2.5 text-xs font-bold gap-1.5 cursor-pointer shadow-xs active:scale-98 transition"
               >
                 <Check v-if="copiedInviteLink" :size="15" />
                 <Copy v-else :size="15" />
-                <span>{{ copiedInviteLink ? 'Đã sao chép link!' : 'Sao chép link mời' }}</span>
+                <span>{{ copiedInviteLink ? 'Đã sao chép link!' : 'Sao chép link' }}</span>
+              </button>
+
+              <button
+                type="button"
+                @click="shareStaffInviteLink"
+                :disabled="!staffInviteLink?.invite_url"
+                class="btn btn-secondary justify-center py-2.5 text-xs font-bold gap-1.5 cursor-pointer text-primary-700 border-primary-200 hover:bg-primary-50 active:scale-98 transition"
+              >
+                <Share2 :size="15" />
+                <span>Chia sẻ Zalo/SMS</span>
               </button>
 
               <router-link
                 to="/staff/referral"
-                class="btn btn-secondary justify-center py-2.5 text-xs font-bold gap-1.5 whitespace-nowrap"
+                class="btn btn-secondary justify-center py-2.5 text-xs font-bold gap-1.5 whitespace-nowrap text-slate-700 hover:text-slate-900 border-slate-200"
               >
                 <Sparkles :size="15" class="text-amber-500" />
-                <span>Bảng nâng cao & Thiệp VIP</span>
+                <span>Thiệp VIP & Thêm</span>
               </router-link>
             </div>
           </div>
 
           <!-- Hộp Mã QR Quét Đăng Ký -->
-          <div class="card p-5 bg-white rounded-2xl border border-slate-200 shadow-xs flex flex-col items-center justify-center text-center space-y-3">
-            <h3 class="font-bold text-slate-900 text-sm">Mã QR Mời Đăng Ký Trực Tiếp</h3>
-            <p class="text-xs text-slate-500 max-w-xs">Đưa khách quét mã bằng Camera điện thoại hoặc Zalo để vào trang đăng ký</p>
+          <div class="card p-4 sm:p-5 bg-white rounded-2xl border border-slate-200 shadow-xs flex flex-col items-center justify-center text-center space-y-3">
+            <div>
+              <h3 class="font-bold text-slate-900 text-sm">Mã QR Mời Đăng Ký Trực Tiếp</h3>
+              <p class="text-[11px] sm:text-xs text-slate-500 max-w-xs mt-0.5">Đưa khách quét mã bằng Camera điện thoại hoặc Zalo để vào trang đăng ký</p>
+            </div>
             
-            <div class="p-3 bg-white rounded-xl border-2 border-dashed border-slate-200 shadow-inner">
-              <img v-if="staffInviteQrUrl" :src="staffInviteQrUrl" alt="Mã QR mời khách" class="w-40 h-40 object-contain rounded-lg" />
-              <div v-else class="w-40 h-40 grid place-items-center text-xs text-slate-400">
+            <div 
+              @click="showZoomQrModal = true"
+              class="p-3 bg-white rounded-xl border-2 border-dashed border-slate-200 shadow-inner cursor-pointer hover:border-primary-400 transition group relative"
+              title="Chạm để phóng to mã QR cho khách quét"
+            >
+              <img v-if="staffInviteQrUrl" :src="staffInviteQrUrl" alt="Mã QR mời khách" class="w-36 h-36 sm:w-40 sm:h-40 object-contain rounded-lg" />
+              <div v-else class="w-36 h-36 sm:w-40 sm:h-40 grid place-items-center text-xs text-slate-400">
                 Đang tạo mã QR...
               </div>
+              <span class="absolute bottom-1.5 right-1.5 bg-slate-900/80 text-white rounded px-1.5 py-0.5 text-[10px] opacity-80 group-hover:opacity-100 flex items-center gap-1 shadow-xs pointer-events-none">
+                <Maximize2 :size="11" /> Phóng to
+              </span>
             </div>
 
-            <a
-              v-if="staffInviteQrUrl"
-              :href="staffInviteQrUrl"
-              :download="`qr-moi-khach-${staffSelectedEvent?.id || 'event'}.png`"
-              class="text-xs font-bold text-primary-700 hover:underline inline-flex items-center gap-1 cursor-pointer"
-            >
-              <ArrowDownToLine :size="14" />
-              Tải ảnh QR về máy
-            </a>
+            <div class="flex items-center gap-3 pt-0.5">
+              <button
+                type="button"
+                @click="showZoomQrModal = true"
+                class="text-xs font-bold text-slate-700 hover:text-primary-700 inline-flex items-center gap-1 cursor-pointer"
+              >
+                <Maximize2 :size="13" /> Phóng to cho khách quét
+              </button>
+              <span class="text-slate-300">|</span>
+              <a
+                v-if="staffInviteQrUrl"
+                :href="staffInviteQrUrl"
+                :download="`qr-moi-khach-${staffSelectedEvent?.id || 'event'}.png`"
+                class="text-xs font-bold text-primary-700 hover:underline inline-flex items-center gap-1 cursor-pointer"
+              >
+                <ArrowDownToLine :size="13" /> Tải ảnh QR
+              </a>
+            </div>
           </div>
         </div>
 
-        <!-- Danh sách khách mời đã đăng ký -->
+        <!-- Danh sách khách mời đã đăng ký (Hỗ trợ hiển thị dạng thẻ đẹp trên Mobile) -->
         <div class="card overflow-hidden bg-white rounded-2xl border border-slate-200 shadow-xs">
           <div class="p-4 sm:p-5 border-b border-slate-100 flex items-center justify-between">
             <div class="flex items-center gap-2">
@@ -1910,64 +1971,127 @@ onBeforeUnmount(stopScanner);
             Chưa có khách nào đăng ký qua link mời của bạn. Hãy sao chép link ở trên và gửi cho khách mời!
           </div>
 
-          <div v-else class="divide-y divide-slate-100 overflow-x-auto">
-            <table class="w-full text-left text-xs">
-              <thead class="bg-slate-50 text-slate-500 font-bold border-b border-slate-100">
-                <tr>
-                  <th class="py-2.5 px-4">Họ và tên</th>
-                  <th class="py-2.5 px-4">Số điện thoại</th>
-                  <th class="py-2.5 px-4">Email</th>
-                  <th class="py-2.5 px-4">Mã vé</th>
-                  <th class="py-2.5 px-4 text-center">Trạng thái</th>
-                  <th class="py-2.5 px-4 text-right">Thao tác</th>
-                </tr>
-              </thead>
-              <tbody class="divide-y divide-slate-100">
-                <tr v-for="reg in staffRegistrations" :key="reg.id" class="hover:bg-slate-50/70 transition">
-                  <td class="py-3 px-4 font-bold text-slate-800">{{ reg.full_name }}</td>
-                  <td class="py-3 px-4 text-slate-600">{{ reg.phone || '—' }}</td>
-                  <td class="py-3 px-4 text-slate-500">{{ reg.email || '—' }}</td>
-                  <td class="py-3 px-4 font-mono font-bold text-primary-700">{{ reg.ticket_code || 'Chưa cấp' }}</td>
-                  <td class="py-3 px-4 text-center">
-                    <span
-                      v-if="reg.ticket_status === 'USED'"
-                      class="inline-flex items-center rounded-full bg-indigo-50 px-2 py-0.5 text-[10px] font-bold text-indigo-700 border border-indigo-200"
-                    >
-                      ✓ Đã Check-in
+          <div v-else>
+            <!-- Giao diện Mobile: Hiển thị dạng Thẻ (Cards) -->
+            <div class="sm:hidden divide-y divide-slate-100">
+              <div v-for="reg in staffRegistrations" :key="reg.id" class="p-3.5 space-y-2">
+                <div class="flex items-start justify-between gap-2">
+                  <div>
+                    <h4 class="font-bold text-slate-900 text-sm">{{ reg.full_name }}</h4>
+                    <span class="text-[11px] font-mono font-bold text-primary-700" v-if="reg.ticket_code">
+                      Vé: {{ reg.ticket_code }}
                     </span>
-                    <span
-                      v-else-if="reg.status === 'APPROVED'"
-                      class="inline-flex items-center rounded-full bg-emerald-50 px-2 py-0.5 text-[10px] font-bold text-emerald-700 border border-emerald-200"
-                    >
-                      ✓ Đã duyệt
-                    </span>
-                    <span
-                      v-else-if="reg.status === 'REJECTED'"
-                      class="inline-flex items-center rounded-full bg-rose-50 px-2 py-0.5 text-[10px] font-bold text-rose-700 border border-rose-200"
-                    >
-                      ✕ Từ chối
-                    </span>
-                    <span
-                      v-else
-                      class="inline-flex items-center rounded-full bg-amber-50 px-2 py-0.5 text-[10px] font-bold text-amber-700 border border-amber-200"
-                    >
-                      ⏳ Chờ duyệt
-                    </span>
-                  </td>
-                  <td class="py-3 px-4 text-right">
-                    <button
-                      v-if="reg.status === 'PENDING' && (staffSelectedEvent?.my_can_approve || user?.permissions?.includes('registrations:approve'))"
-                      type="button"
-                      @click="approveStaffGuest(reg.id)"
-                      class="px-2.5 py-1 rounded-md bg-primary-50 text-primary-700 hover:bg-primary-100 font-bold text-[11px] border border-primary-200 cursor-pointer"
-                    >
-                      Duyệt vé
-                    </button>
-                    <span v-else class="text-slate-400 text-[11px]">—</span>
-                  </td>
-                </tr>
-              </tbody>
-            </table>
+                  </div>
+                  <span
+                    v-if="reg.ticket_status === 'USED'"
+                    class="inline-flex items-center rounded-full bg-indigo-50 px-2 py-0.5 text-[10px] font-bold text-indigo-700 border border-indigo-200 shrink-0"
+                  >
+                    ✓ Đã Check-in
+                  </span>
+                  <span
+                    v-else-if="reg.status === 'APPROVED'"
+                    class="inline-flex items-center rounded-full bg-emerald-50 px-2 py-0.5 text-[10px] font-bold text-emerald-700 border border-emerald-200 shrink-0"
+                  >
+                    ✓ Đã duyệt
+                  </span>
+                  <span
+                    v-else-if="reg.status === 'REJECTED'"
+                    class="inline-flex items-center rounded-full bg-rose-50 px-2 py-0.5 text-[10px] font-bold text-rose-700 border border-rose-200 shrink-0"
+                  >
+                    ✕ Từ chối
+                  </span>
+                  <span
+                    v-else
+                    class="inline-flex items-center rounded-full bg-amber-50 px-2 py-0.5 text-[10px] font-bold text-amber-700 border border-amber-200 shrink-0"
+                  >
+                    ⏳ Chờ duyệt
+                  </span>
+                </div>
+
+                <div class="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-slate-600">
+                  <a v-if="reg.phone" :href="`tel:${reg.phone}`" class="text-primary-700 font-semibold hover:underline">
+                    📞 {{ reg.phone }}
+                  </a>
+                  <span v-if="reg.email" class="text-slate-400 truncate max-w-[200px]">
+                    ✉️ {{ reg.email }}
+                  </span>
+                </div>
+
+                <div
+                  v-if="reg.status === 'PENDING' && (staffSelectedEvent?.my_can_approve || user?.permissions?.includes('registrations:approve'))"
+                  class="pt-1 flex justify-end"
+                >
+                  <button
+                    type="button"
+                    @click="approveStaffGuest(reg.id)"
+                    class="btn btn-primary py-1 px-3 text-xs font-bold"
+                  >
+                    Duyệt vé ngay
+                  </button>
+                </div>
+              </div>
+            </div>
+
+            <!-- Giao diện Desktop: Bảng Table đầy đủ -->
+            <div class="hidden sm:block divide-y divide-slate-100 overflow-x-auto">
+              <table class="w-full text-left text-xs">
+                <thead class="bg-slate-50 text-slate-500 font-bold border-b border-slate-100">
+                  <tr>
+                    <th class="py-2.5 px-4">Họ và tên</th>
+                    <th class="py-2.5 px-4">Số điện thoại</th>
+                    <th class="py-2.5 px-4">Email</th>
+                    <th class="py-2.5 px-4">Mã vé</th>
+                    <th class="py-2.5 px-4 text-center">Trạng thái</th>
+                    <th class="py-2.5 px-4 text-right">Thao tác</th>
+                  </tr>
+                </thead>
+                <tbody class="divide-y divide-slate-100">
+                  <tr v-for="reg in staffRegistrations" :key="reg.id" class="hover:bg-slate-50/70 transition">
+                    <td class="py-3 px-4 font-bold text-slate-800">{{ reg.full_name }}</td>
+                    <td class="py-3 px-4 text-slate-600">{{ reg.phone || '—' }}</td>
+                    <td class="py-3 px-4 text-slate-500">{{ reg.email || '—' }}</td>
+                    <td class="py-3 px-4 font-mono font-bold text-primary-700">{{ reg.ticket_code || 'Chưa cấp' }}</td>
+                    <td class="py-3 px-4 text-center">
+                      <span
+                        v-if="reg.ticket_status === 'USED'"
+                        class="inline-flex items-center rounded-full bg-indigo-50 px-2 py-0.5 text-[10px] font-bold text-indigo-700 border border-indigo-200"
+                      >
+                        ✓ Đã Check-in
+                      </span>
+                      <span
+                        v-else-if="reg.status === 'APPROVED'"
+                        class="inline-flex items-center rounded-full bg-emerald-50 px-2 py-0.5 text-[10px] font-bold text-emerald-700 border border-emerald-200"
+                      >
+                        ✓ Đã duyệt
+                      </span>
+                      <span
+                        v-else-if="reg.status === 'REJECTED'"
+                        class="inline-flex items-center rounded-full bg-rose-50 px-2 py-0.5 text-[10px] font-bold text-rose-700 border border-rose-200"
+                      >
+                        ✕ Từ chối
+                      </span>
+                      <span
+                        v-else
+                        class="inline-flex items-center rounded-full bg-amber-50 px-2 py-0.5 text-[10px] font-bold text-amber-700 border border-amber-200"
+                      >
+                        ⏳ Chờ duyệt
+                      </span>
+                    </td>
+                    <td class="py-3 px-4 text-right">
+                      <button
+                        v-if="reg.status === 'PENDING' && (staffSelectedEvent?.my_can_approve || user?.permissions?.includes('registrations:approve'))"
+                        type="button"
+                        @click="approveStaffGuest(reg.id)"
+                        class="px-2.5 py-1 rounded-md bg-primary-50 text-primary-700 hover:bg-primary-100 font-bold text-[11px] border border-primary-200 cursor-pointer"
+                      >
+                        Duyệt vé
+                      </button>
+                      <span v-else class="text-slate-400 text-[11px]">—</span>
+                    </td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
           </div>
         </div>
       </section>
@@ -2115,7 +2239,87 @@ onBeforeUnmount(stopScanner);
             Không tìm thấy đăng ký nào phù hợp với bộ lọc hiện tại.
           </div>
 
-          <div v-else class="overflow-x-auto rounded-xl border border-slate-100">
+          <div v-else>
+            <!-- Giao diện Mobile: Hiển thị Thẻ Khách Duyệt (Cards) -->
+            <div class="sm:hidden divide-y divide-slate-100">
+              <div v-for="reg in filteredApprovalRegistrations" :key="reg.id" class="p-3.5 space-y-2.5">
+                <div class="flex items-start justify-between gap-2">
+                  <div>
+                    <h4 class="font-bold text-slate-900 text-sm">{{ reg.full_name }}</h4>
+                    <div class="flex items-center gap-2 mt-0.5">
+                      <span class="text-[11px] font-mono font-bold text-primary-700" v-if="reg.ticket_code">
+                        Vé: {{ reg.ticket_code }}
+                      </span>
+                      <span class="text-[11px] text-slate-500">
+                        {{ reg.referrer_name ? `qua: ${reg.referrer_name}` : 'Khách vãng lai' }}
+                      </span>
+                    </div>
+                  </div>
+                  <span
+                    v-if="reg.ticket_status === 'USED'"
+                    class="inline-flex items-center rounded-full bg-indigo-50 px-2 py-0.5 text-[10px] font-bold text-indigo-700 border border-indigo-200 shrink-0"
+                  >
+                    ✓ Đã Check-in
+                  </span>
+                  <span
+                    v-else-if="reg.status === 'APPROVED'"
+                    class="inline-flex items-center rounded-full bg-emerald-50 px-2 py-0.5 text-[10px] font-bold text-emerald-700 border border-emerald-200 shrink-0"
+                  >
+                    ✓ Đã duyệt
+                  </span>
+                  <span
+                    v-else-if="reg.status === 'REJECTED'"
+                    class="inline-flex items-center rounded-full bg-rose-50 px-2 py-0.5 text-[10px] font-bold text-rose-700 border border-rose-200 shrink-0"
+                  >
+                    ✕ Từ chối
+                  </span>
+                  <span
+                    v-else
+                    class="inline-flex items-center rounded-full bg-amber-50 px-2 py-0.5 text-[10px] font-bold text-amber-700 border border-amber-200 shrink-0 animate-pulse"
+                  >
+                    ⏳ Chờ duyệt
+                  </span>
+                </div>
+
+                <div class="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-slate-600">
+                  <a v-if="reg.phone" :href="`tel:${reg.phone}`" class="text-primary-700 font-semibold hover:underline">
+                    📞 {{ reg.phone }}
+                  </a>
+                  <span v-if="reg.email" class="text-slate-400 truncate max-w-[200px]">
+                    ✉️ {{ reg.email }}
+                  </span>
+                </div>
+
+                <div v-if="reg.status === 'PENDING'" class="pt-1 flex items-center justify-end gap-2">
+                  <button
+                    type="button"
+                    @click="rejectStaffGuest(reg)"
+                    class="px-3 py-1.5 rounded-lg bg-slate-100 hover:bg-rose-50 text-rose-600 border border-slate-200 font-bold text-xs"
+                  >
+                    Từ chối
+                  </button>
+                  <button
+                    type="button"
+                    @click="approveStaffGuest(reg.id)"
+                    class="px-4 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs shadow-xs"
+                  >
+                    Duyệt vé ngay
+                  </button>
+                </div>
+                <div v-else-if="reg.status === 'APPROVED' && reg.ticket_status !== 'USED'" class="pt-1 flex justify-end">
+                  <button
+                    type="button"
+                    @click="rejectStaffGuest(reg)"
+                    class="text-[11px] text-slate-400 hover:text-rose-600 underline"
+                  >
+                    Thu hồi vé
+                  </button>
+                </div>
+              </div>
+            </div>
+
+            <!-- Giao diện Desktop: Bảng Table đầy đủ -->
+            <div class="hidden sm:block overflow-x-auto rounded-xl border border-slate-100">
             <table class="w-full text-left text-xs">
               <thead class="bg-slate-50 text-slate-500 font-bold border-b border-slate-100">
                 <tr>
@@ -2203,6 +2407,7 @@ onBeforeUnmount(stopScanner);
                 </tr>
               </tbody>
             </table>
+            </div>
           </div>
         </div>
       </section>
@@ -2588,7 +2793,7 @@ onBeforeUnmount(stopScanner);
         <button class="icon-button mobile-logout" @click="logout"><LogOut :size="18" /></button>
       </header>
 
-      <div class="content-area">
+      <div class="content-area pb-24 md:pb-8">
         <div v-if="errorMessage" class="error-box page-error">
           <span>{{ errorMessage }}</span><button @click="errorMessage = ''"><X :size="16" /></button>
         </div>
@@ -3110,7 +3315,56 @@ onBeforeUnmount(stopScanner);
                 <Users :size="26" />
                 <span>Chưa có khách đăng ký cho sự kiện này.</span>
               </div>
-              <div v-else class="table-scroll">
+              <div v-else>
+                <!-- Giao diện Mobile cho Khách Mời (Thẻ Cards) -->
+                <div class="sm:hidden divide-y divide-slate-100 p-2">
+                  <div
+                    v-for="attendee in filteredAttendees.slice(0, activePanel === 'attendees' ? undefined : 8)"
+                    :key="attendee.registration_id"
+                    class="p-3 space-y-2 bg-slate-50/70 rounded-xl mb-2 border border-slate-100"
+                  >
+                    <div class="flex items-start justify-between gap-2">
+                      <div>
+                        <b class="text-sm font-bold text-slate-900 block">{{ attendee.full_name }}</b>
+                        <span class="text-xs text-slate-500 font-mono">{{ attendee.phone || attendee.email }}</span>
+                      </div>
+                      <span
+                        class="status-pill text-[10px]"
+                        :class="attendee.registration_status === 'APPROVED' ? 'status-green' : attendee.registration_status === 'REJECTED' ? 'status-gray' : 'status-amber'"
+                      >
+                        {{ attendee.registration_status === 'APPROVED' ? 'Đã duyệt' : attendee.registration_status === 'REJECTED' ? 'Từ chối' : attendee.registration_status === 'PENDING_ADMIN' ? 'Chờ BTC duyệt' : 'Đang chờ' }}
+                      </span>
+                    </div>
+
+                    <div class="flex items-center justify-between text-xs text-slate-600">
+                      <span>Mã vé: <code class="font-mono font-bold text-primary-700">{{ attendee.ticket_code || 'Chưa có' }}</code></span>
+                      <span v-if="attendee.ticket_status === 'USED'" class="text-indigo-600 font-bold text-[11px] flex items-center gap-1">
+                        <Check :size="12" /> Đã vào cổng
+                      </span>
+                      <span v-else class="text-slate-400 text-[11px]">Chưa check-in</span>
+                    </div>
+
+                    <div v-if="attendee.registration_status === 'PENDING' || attendee.registration_status === 'PENDING_ADMIN'" class="flex items-center justify-end gap-2 pt-1 border-t border-slate-200/60">
+                      <button
+                        type="button"
+                        class="px-3 py-1 rounded-lg bg-rose-50 text-rose-600 border border-rose-200 font-bold text-xs"
+                        @click="rejectTenantAttendee(attendee)"
+                      >
+                        Từ chối
+                      </button>
+                      <button
+                        type="button"
+                        class="px-3.5 py-1 rounded-lg bg-emerald-600 text-white font-bold text-xs"
+                        @click="approveTenantAttendee(attendee.registration_id)"
+                      >
+                        Duyệt vé
+                      </button>
+                    </div>
+                  </div>
+                </div>
+
+                <!-- Desktop Table -->
+                <div class="hidden sm:block table-scroll">
                 <table>
                   <thead>
                     <tr>
@@ -3161,6 +3415,7 @@ onBeforeUnmount(stopScanner);
                     </tr>
                   </tbody>
                 </table>
+                </div>
               </div>
               <button v-if="activePanel !== 'attendees' && attendees.length > 8" class="show-all" @click="activePanel = 'attendees'">
                 Xem toàn bộ {{ attendees.length }} khách mời <ArrowRight :size="15" />
@@ -3170,6 +3425,65 @@ onBeforeUnmount(stopScanner);
         </template>
       </div>
     </main>
+
+    <!-- THANH ĐIỀU HƯỚNG DƯỚI CÙNG TRÊN MOBILE CHO BAN TỔ CHỨC (TENANT ADMIN) -->
+    <nav class="md:hidden fixed bottom-0 inset-x-0 z-40 bg-white/95 backdrop-blur-md border-t border-slate-200 flex items-center justify-around py-2 px-1 shadow-lg pb-safe">
+      <button
+        type="button"
+        @click="activePanel = 'overview'"
+        class="flex flex-col items-center justify-center flex-1 py-1 gap-1 text-[10px] font-bold transition select-none cursor-pointer"
+        :class="activePanel === 'overview' ? 'text-primary-700' : 'text-slate-500 hover:text-slate-800'"
+      >
+        <CalendarDays :size="18" />
+        <span>Tổng quan</span>
+      </button>
+
+      <button
+        type="button"
+        @click="activePanel = 'attendees'"
+        class="flex flex-col items-center justify-center flex-1 py-1 gap-1 text-[10px] font-bold transition select-none cursor-pointer relative"
+        :class="activePanel === 'attendees' ? 'text-primary-700' : 'text-slate-500 hover:text-slate-800'"
+      >
+        <Users :size="18" />
+        <span>Khách mời</span>
+        <span v-if="attendees.length" class="absolute top-0.5 right-3 px-1 py-0.2 bg-primary-600 text-white rounded-full text-[9px] font-mono leading-none">
+          {{ attendees.length }}
+        </span>
+      </button>
+
+      <button
+        type="button"
+        @click="stopScanner(); activePanel = 'team'"
+        class="flex flex-col items-center justify-center flex-1 py-1 gap-1 text-[10px] font-bold transition select-none cursor-pointer"
+        :class="activePanel === 'team' ? 'text-primary-700' : 'text-slate-500 hover:text-slate-800'"
+      >
+        <ShieldCheck :size="18" />
+        <span>Đội ngũ</span>
+      </button>
+
+      <button
+        type="button"
+        @click="selectedScannerEventId = selectedEvent?.id || scannerEvents[0]?.id || null; activePanel = 'scanner'"
+        class="flex flex-col items-center justify-center flex-1 py-1 gap-1 text-[10px] font-bold transition select-none cursor-pointer"
+        :class="activePanel === 'scanner' ? 'text-emerald-700 font-extrabold' : 'text-slate-500 hover:text-slate-800'"
+      >
+        <Camera :size="18" />
+        <span>Soát vé</span>
+      </button>
+
+      <button
+        type="button"
+        @click="stopScanner(); loadDisputes(); activePanel = 'disputes'"
+        class="flex flex-col items-center justify-center flex-1 py-1 gap-1 text-[10px] font-bold transition select-none cursor-pointer relative"
+        :class="activePanel === 'disputes' ? 'text-amber-700' : 'text-slate-500 hover:text-slate-800'"
+      >
+        <Scale :size="18" />
+        <span>Tranh chấp</span>
+        <span v-if="disputesList.filter(d => d.decision === 'PENDING').length" class="absolute top-0.5 right-3 px-1 py-0.2 bg-amber-500 text-white rounded-full text-[9px] font-mono leading-none">
+          {{ disputesList.filter(d => d.decision === 'PENDING').length }}
+        </span>
+      </button>
+    </nav>
 
     <div v-if="showMemberModal" class="modal-scrim" @click.self="showMemberModal = false">
       <div class="modal-card" style="max-width: 540px;">
@@ -3949,6 +4263,63 @@ onBeforeUnmount(stopScanner);
           </button>
         </div>
       </form>
+    </div>
+  </div>
+
+  <!-- MODAL: PHÓNG TO MÃ QR ĐỂ KHÁCH QUÉT TRỰC TIẾP TRÊN MOBILE -->
+  <div v-if="showZoomQrModal" class="modal-scrim" @click.self="showZoomQrModal = false">
+    <div class="modal-card max-w-sm w-full mx-4 text-center p-6 bg-white rounded-3xl shadow-2xl relative">
+      <button
+        type="button"
+        class="absolute top-4 right-4 p-2 text-slate-400 hover:text-slate-700 bg-slate-100 hover:bg-slate-200 rounded-full transition cursor-pointer"
+        @click="showZoomQrModal = false"
+      >
+        <X :size="18" />
+      </button>
+
+      <div class="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-primary-50 text-primary-700 text-xs font-bold mb-2">
+        <Sparkles :size="13" />
+        <span>Mã QR Mời Trực Tiếp</span>
+      </div>
+
+      <h3 class="text-base font-bold text-slate-900 mb-0.5">
+        {{ staffSelectedEvent?.name || 'Sự kiện' }}
+      </h3>
+      <p class="text-[11px] text-slate-500 mb-4">
+        Đưa điện thoại để khách quét camera trực tiếp hoặc quét bằng Zalo
+      </p>
+
+      <div class="bg-white p-3 rounded-2xl border-2 border-dashed border-primary-200 inline-block shadow-xs mb-4">
+        <img
+          v-if="staffInviteQrUrl"
+          :src="staffInviteQrUrl"
+          alt="QR Code Zoom"
+          class="w-60 h-60 sm:w-64 sm:h-64 object-contain mx-auto"
+        />
+        <div v-else class="w-60 h-60 flex items-center justify-center text-slate-400 text-xs">
+          Đang tạo mã QR...
+        </div>
+      </div>
+
+      <div class="flex flex-col sm:flex-row gap-2">
+        <a
+          v-if="staffInviteQrUrl"
+          :href="staffInviteQrUrl"
+          :download="`QR-Moi-${staffSelectedEvent?.name || 'sukien'}.png`"
+          class="btn btn-secondary flex-1 py-2.5 text-xs font-bold justify-center gap-1.5 cursor-pointer"
+        >
+          <Download :size="14" />
+          <span>Lưu ảnh về máy</span>
+        </a>
+        <button
+          type="button"
+          @click="shareStaffInviteLink"
+          class="btn btn-primary flex-1 py-2.5 text-xs font-bold justify-center gap-1.5 cursor-pointer"
+        >
+          <Share2 :size="14" />
+          <span>Chia sẻ Zalo/SMS</span>
+        </button>
+      </div>
     </div>
   </div>
 </template>
