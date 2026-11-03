@@ -1,6 +1,5 @@
 import { createRouter, createWebHistory } from 'vue-router';
 import { useAuthStore } from '../stores/auth';
-import { isGuestMode, isTenantMode, isAdminMode } from '../utils/portalMode';
 
 const router = createRouter({
   history: createWebHistory(),
@@ -8,57 +7,40 @@ const router = createRouter({
     {
       path: '/',
       redirect: () => {
-        if (isGuestMode) {
-          const auth = useAuthStore();
-          if (auth.isCustomer) return '/my-ticket';
-          return '/khach';
-        }
-        if (isTenantMode) {
-          return '/tenant';
-        }
-        if (isAdminMode) {
-          const auth = useAuthStore();
-          if (auth.isAdmin) return '/admin';
-          return '/login';
-        }
         const auth = useAuthStore();
         if (auth.isAdmin) return '/admin';
-        if (auth.isTenantAdmin) return '/tenant';
-        if (auth.isStaff && auth.user?.tenant_id) return '/tenant';
-        if (auth.hasPermission('tickets:scan')) return '/tenant';
-        if (auth.hasPermission('invite:create')) return '/staff/referral';
-        if (auth.hasPermission('customer:dispute_manage')) return '/staff/disputes';
-        if (auth.isStaff) return '/tenant';
+        if (auth.isTenantAdmin || auth.isStaff) return '/tenant';
         if (auth.isCustomer) return '/my-ticket';
-        return '/login';
+        return '/khach';
       },
     },
-    {
-      path: '/login',
-      name: 'login',
-      component: () => import('../views/LoginView.vue'),
-    },
-    {
-      path: '/tenant',
-      name: 'tenant-portal',
-      component: () => import('../views/tenant/TenantPortalView.vue'),
-    },
-    {
-      path: '/tenant-portal',
-      redirect: '/tenant',
-    },
+    // ========================================================
+    // 1. LINK DÀNH CHO KHÁCH (Khách xem vé & Khách mở sự kiện)
+    // ========================================================
     {
       path: '/khach',
       name: 'guest-portal',
-      redirect: '/login?tab=check',
+      component: () => import('../views/LoginView.vue'),
+    },
+    {
+      path: '/login',
+      redirect: (to) => ({ path: '/khach', query: to.query }),
     },
     {
       path: '/tra-cuu',
-      redirect: '/login?tab=check',
+      redirect: '/khach?tab=check',
     },
     {
-      path: '/dang-ky',
-      redirect: '/invite/inv_b20d2efd41ea43a8b1e26d0b666bf33d',
+      path: '/to-chuc',
+      redirect: '/khach?tab=host',
+    },
+    // ========================================================
+    // 2. LINK DÀNH CHO ADMIN (Tách biệt hoàn toàn, bảo mật cao)
+    // ========================================================
+    {
+      path: '/admin/login',
+      name: 'admin-login',
+      component: () => import('../views/admin/AdminLoginView.vue'),
     },
     {
       path: '/admin',
@@ -72,6 +54,22 @@ const router = createRouter({
       component: () => import('../views/admin/TenantsView.vue'),
       meta: { requiresAdmin: true },
     },
+    // ========================================================
+    // 3. CỔNG BAN TỔ CHỨC / KHÁCH THUÊ
+    // ========================================================
+    {
+      path: '/tenant',
+      name: 'tenant-portal',
+      component: () => import('../views/tenant/TenantPortalView.vue'),
+      meta: { requiresAuth: true },
+    },
+    {
+      path: '/tenant-portal',
+      redirect: '/tenant',
+    },
+    // ========================================================
+    // 4. CHỨC NĂNG NHÂN VIÊN
+    // ========================================================
     {
       path: '/staff/referral',
       name: 'staff-referral',
@@ -88,10 +86,17 @@ const router = createRouter({
       component: () => import('../views/staff/DisputesView.vue'),
       meta: { requiresAuth: true, permission: 'customer:dispute_manage' },
     },
+    // ========================================================
+    // 5. TRANG VÉ CỦA KHÁCH & MÀN HÌNH CHÀO MỪNG
+    // ========================================================
     {
       path: '/invite/:token',
       name: 'invite-landing',
       component: () => import('../views/customer/InviteLandingView.vue'),
+    },
+    {
+      path: '/dang-ky',
+      redirect: '/khach',
     },
     {
       path: '/my-ticket',
@@ -116,39 +121,56 @@ const router = createRouter({
 });
 
 router.beforeEach(async (to, from, next) => {
-  // Strict mode isolation
-  if (isGuestMode) {
-    if (to.path.startsWith('/tenant') || to.path.startsWith('/admin') || to.path.startsWith('/staff')) {
-      return next('/khach');
-    }
-  }
-  if (isTenantMode) {
-    if (to.path.startsWith('/admin') || to.path === '/khach' || to.path === '/tra-cuu' || to.path === '/my-ticket') {
-      return next('/tenant');
-    }
-  }
-  if (isAdminMode) {
-    if (to.path.startsWith('/tenant') || to.path === '/khach' || to.path === '/tra-cuu' || to.path === '/my-ticket') {
-      return next('/admin');
-    }
-  }
-
   const auth = useAuthStore();
 
   // Load profile if token exists but user not loaded yet
   if (auth.token && !auth.user) {
-    await auth.fetchMe();
-  }
-
-  if (to.meta.requiresAdmin) {
-    if (!auth.isAuthenticated || !auth.isAdmin) {
-      return next({ name: 'login' });
+    try {
+      await auth.fetchMe();
+    } catch {
+      auth.logout();
     }
   }
 
+  // 1. BẢO VỆ KHU VỰC ADMIN (TÁCH BIỆT & CHẶN KHÁCH HOÀN TOÀN)
+  if (to.path.startsWith('/admin')) {
+    // Nếu vào trang đăng nhập Admin (/admin/login)
+    if (to.path === '/admin/login') {
+      if (auth.isAuthenticated && auth.isAdmin) {
+        return next('/admin');
+      }
+      // Nếu là khách / khách thuê đã đăng nhập nhưng cố vào /admin/login -> chặn lại
+      if (auth.isAuthenticated && !auth.isAdmin) {
+        return next(auth.isCustomer ? '/my-ticket' : '/tenant');
+      }
+      return next();
+    }
+
+    // Nếu vào các trang quản trị (/admin, /admin/tenants...)
+    if (!auth.isAuthenticated) {
+      // Chưa đăng nhập -> chuyển sang trang Đăng nhập Quản trị
+      return next({ path: '/admin/login', query: { redirect: to.fullPath } });
+    }
+
+    if (!auth.isAdmin) {
+      // Khách cố tình truy cập vào trang Quản trị -> CHẶN ĐỨNG
+      alert('Bạn không có quyền truy cập vào Khu vực Quản trị viên!');
+      return next(auth.isCustomer ? '/my-ticket' : '/khach');
+    }
+  }
+
+  // 2. KHU VỰC KHÁCH (/khach): Nếu là Admin tổng đang đăng nhập, tự động chuyển về /admin
+  if (to.path === '/khach' && auth.isAuthenticated && auth.isAdmin) {
+    return next('/admin');
+  }
+
+  // 3. Yêu cầu đăng nhập thông thường (Tenant portal, My ticket, Staff)
   if (to.meta.requiresAuth) {
     if (!auth.isAuthenticated) {
-      return next({ name: 'login', query: { redirect: to.fullPath } });
+      if (to.path.startsWith('/admin')) {
+        return next({ path: '/admin/login', query: { redirect: to.fullPath } });
+      }
+      return next({ path: '/khach', query: { redirect: to.fullPath } });
     }
 
     if (to.meta.permission && !auth.hasPermission(to.meta.permission as string)) {

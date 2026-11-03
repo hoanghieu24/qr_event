@@ -11,8 +11,15 @@ const auth = useAuthStore();
 const user = computed(() => auth.user);
 const menuOpen = ref(false);
 
-// Trang khách (link mời, đăng nhập) hiển thị toàn màn hình, không có khung quản trị
-const bareLayout = computed(() => route.path.startsWith('/invite') || route.path === '/login' || route.path.startsWith('/tenant') || route.path.startsWith('/events/'));
+// Trang khách (link mời, đăng nhập, trang khách) hiển thị toàn màn hình, không có khung quản trị
+const bareLayout = computed(() =>
+  route.path.startsWith('/invite') ||
+  route.path === '/login' ||
+  route.path === '/khach' ||
+  route.path === '/admin/login' ||
+  route.path.startsWith('/tenant') ||
+  route.path.startsWith('/events/')
+);
 
 const initials = computed(() => {
   const name = user.value?.name?.trim() || '';
@@ -41,8 +48,13 @@ const isActive = (to: string) => route.path === to || route.path.startsWith(to +
 
 const handleLogout = () => {
   menuOpen.value = false;
+  const wasAdmin = auth.isAdmin;
   auth.logout();
-  router.push('/login');
+  if (wasAdmin) {
+    router.push('/admin/login');
+  } else {
+    router.push('/khach');
+  }
 };
 
 watch(() => route.fullPath, () => (menuOpen.value = false));
@@ -117,7 +129,7 @@ watch(() => route.fullPath, () => (menuOpen.value = false));
               <div v-if="menuOpen" class="fixed inset-0 -z-10" @click="menuOpen = false" />
             </div>
           </template>
-          <router-link v-else to="/login" class="btn-primary btn-sm">Đăng nhập</router-link>
+          <router-link v-else to="/khach" class="btn-primary btn-sm">Đăng nhập</router-link>
         </div>
       </div>
     </header>
