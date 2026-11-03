@@ -42,6 +42,50 @@ app.get('/health', (req, res) => {
   res.json({ status: 'ok', timestamp: new Date().toISOString() });
 });
 
+// Auto Init DB endpoint for deployment bootstrap
+app.get('/api/v1/init-db', async (req, res) => {
+  let connection: any = null;
+  try {
+    const { pool } = await import('./config/database');
+    connection = await pool.getConnection();
+    const candidatePaths = [
+      path.resolve(process.cwd(), 'aiven_database_dump.sql'),
+      path.resolve(process.cwd(), 'backend', 'aiven_database_dump.sql'),
+      path.resolve(__dirname, '../aiven_database_dump.sql'),
+      path.resolve(__dirname, '../../aiven_database_dump.sql'),
+    ];
+    const dumpPath = candidatePaths.find((p) => fs.existsSync(p));
+    if (!dumpPath) {
+      return res.status(404).json({ success: false, message: 'aiven_database_dump.sql not found on server' });
+    }
+    const dumpSql = fs.readFileSync(dumpPath, 'utf-8');
+    const statements = dumpSql
+      .split(/;\r?\n/)
+      .map((s) => s.trim())
+      .filter((s) => s.length > 0 && !s.startsWith('--'));
+
+    await connection.query('SET FOREIGN_KEY_CHECKS = 0;');
+    for (const sql of statements) {
+      try {
+        await connection.query(sql);
+      } catch (e: any) {}
+    }
+    await connection.query('SET FOREIGN_KEY_CHECKS = 1;');
+
+    const [tables]: any = await connection.query('SHOW TABLES');
+    return res.json({
+      success: true,
+      message: 'Khởi tạo cơ sở dữ liệu Aiven thành công!',
+      tableCount: tables.length,
+      tables: tables.map((t: any) => Object.values(t)[0]),
+    });
+  } catch (err: any) {
+    return res.status(500).json({ success: false, message: err.message });
+  } finally {
+    if (connection) connection.release();
+  }
+});
+
 // Persistent Storage for Custom Invite Card Templates (Canva / Uploaded)
 const TEMPLATES_FILE = path.join(process.cwd(), 'data', 'invite_templates.json');
 function readStoredTemplates(): { items: any[]; activeId: string | null } {
