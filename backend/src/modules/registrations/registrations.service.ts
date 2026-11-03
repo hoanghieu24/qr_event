@@ -1,4 +1,5 @@
 import crypto from 'crypto';
+import jwt from 'jsonwebtoken';
 import { v4 as uuidv4 } from 'uuid';
 import QRCode from 'qrcode';
 import { query, withTransaction } from '../../config/database';
@@ -196,11 +197,26 @@ export class RegistrationsService {
           console.warn('[Realtime] Failed to emit auto approval:', rtErr);
         }
 
+        const customerToken = jwt.sign(
+          { id: actualCustomerId, email: data.email, type: 'CUSTOMER' },
+          ENV.JWT_SECRET,
+          { expiresIn: '7d' }
+        );
+
         return {
           id: regId,
           status: 'APPROVED',
           ticket_id: tktRes.insertId,
           code: ticketCode,
+          token: customerToken,
+          user: {
+            id: actualCustomerId,
+            name: data.full_name,
+            email: data.email,
+            phone: data.phone,
+            type: 'CUSTOMER',
+            permissions: [],
+          },
           message: 'Đăng ký thành công! Vé QR của bạn đã được cấp tự động.',
         };
       }
@@ -265,9 +281,24 @@ export class RegistrationsService {
         ? 'Đăng ký thành công! Đang chờ người giới thiệu và Ban Quản Trị phê duyệt cấp vé QR.'
         : 'Đăng ký thành công! Vui lòng chờ người giới thiệu phê duyệt cấp vé QR.';
 
+      const customerToken = jwt.sign(
+        { id: actualCustomerId, email: data.email, type: 'CUSTOMER' },
+        ENV.JWT_SECRET,
+        { expiresIn: '7d' }
+      );
+
       return {
         id: res.insertId,
         status: 'PENDING',
+        token: customerToken,
+        user: {
+          id: actualCustomerId,
+          name: data.full_name,
+          email: data.email,
+          phone: data.phone,
+          type: 'CUSTOMER',
+          permissions: [],
+        },
         message: msg,
       };
     });

@@ -50,7 +50,15 @@ export const useAuthStore = defineStore('auth', {
     },
 
     async sendOtp(email: string) {
-      return await api.post('/auth/send-otp', { email });
+      const res = await api.post('/auth/send-otp', { email });
+      if (res.data?.data?.token) {
+        this.token = res.data.data.token;
+        this.user = res.data.data.user;
+        localStorage.setItem('token', this.token as string);
+        localStorage.setItem('user', JSON.stringify(this.user));
+        refreshSocketAuth();
+      }
+      return res;
     },
 
     async verifyOtp(email: string, otp: string, name?: string, phone?: string) {

@@ -131,7 +131,15 @@ const handleSendOtp = async () => {
   formError.value = '';
   otpBusy.value = true;
   try {
-    await auth.sendOtp(otpEmail.value.trim());
+    const res = await auth.sendOtp(otpEmail.value.trim());
+    if (res.data?.data?.token) {
+      // Đã từng có tài khoản -> Bỏ qua OTP, tự động đăng nhập và cập nhật form
+      const user = res.data.data.user;
+      form.value.full_name = user.name || form.value.full_name;
+      form.value.email = user.email || otpEmail.value.trim();
+      form.value.phone = user.phone || form.value.phone;
+      return;
+    }
     otpSent.value = true;
     form.value.email = otpEmail.value.trim();
   } catch (err: any) {
@@ -185,13 +193,15 @@ const handleVerifyOtp = async () => {
 
 const handleSubmitRegistration = async () => {
   formError.value = '';
-  if (!auth.isAuthenticated) {
-    formError.value = 'Vui lòng xác thực email bằng mã OTP trước khi gửi đăng ký.';
-    return;
-  }
   isSubmitting.value = true;
   try {
-    await api.post('/registrations', { token, ...form.value });
+    const res = await api.post('/registrations', { token, ...form.value });
+    if (res.data?.data?.token) {
+      auth.token = res.data.data.token;
+      auth.user = res.data.data.user;
+      localStorage.setItem('token', res.data.data.token);
+      localStorage.setItem('user', JSON.stringify(res.data.data.user));
+    }
     registrationDone.value = true;
     window.scrollTo({ top: 0, behavior: 'smooth' });
   } catch (err: any) {
@@ -391,7 +401,7 @@ const handleSubmitRegistration = async () => {
                 <template v-if="authMode === 'otp'">
                   <div>
                     <h3 class="font-bold text-slate-900">Xác thực email của bạn</h3>
-                    <p class="text-sm text-slate-500">Vé QR sẽ được gửi về email này sau khi được duyệt.</p>
+                    <p class="text-sm text-slate-500">Khách đã từng có tài khoản sẽ tự động chuyển bước nhận vé ngay mà không cần nhập OTP.</p>
                   </div>
                   
                   <form v-if="!otpSent" @submit.prevent="handleSendOtp" class="space-y-3">
@@ -410,7 +420,7 @@ const handleSubmitRegistration = async () => {
                       </div>
                       <button type="submit" :disabled="otpBusy || !otpEmail" class="btn-dark py-3">
                         <Loader2 v-if="otpBusy" class="h-4 w-4 animate-spin" />
-                        <template v-else>Gửi mã OTP</template>
+                        <template v-else>Xác thực / Tiếp tục</template>
                       </button>
                     </div>
 
@@ -525,7 +535,7 @@ const handleSubmitRegistration = async () => {
               </div>
 
               <!-- Step 2: Details -->
-              <form @submit.prevent="handleSubmitRegistration" class="space-y-4" :class="!auth.isAuthenticated && 'pointer-events-none select-none opacity-40'">
+              <form @submit.prevent="handleSubmitRegistration" class="space-y-4">
                 <div v-if="!auth.isAuthenticated" class="divider" />
                 <h3 class="font-bold text-slate-900">Thông tin người tham dự</h3>
                 <div class="grid gap-4 sm:grid-cols-2">
@@ -550,9 +560,9 @@ const handleSubmitRegistration = async () => {
                   <label class="field-label">Địa chỉ <span class="font-normal text-slate-400">(tuỳ chọn)</span></label>
                   <input v-model="form.address" autocomplete="street-address" placeholder="Số nhà, đường, quận/huyện, tỉnh/thành" class="field" />
                 </div>
-                <button type="submit" :disabled="isSubmitting || !auth.isAuthenticated" class="btn-primary btn-lg w-full">
+                <button type="submit" :disabled="isSubmitting" class="btn-primary btn-lg w-full">
                   <Loader2 v-if="isSubmitting" class="h-5 w-5 animate-spin" />
-                  <template v-else>Gửi đăng ký tham gia</template>
+                  <template v-else>Xác nhận tham gia & Nhận vé QR</template>
                 </button>
                 <p class="flex items-center justify-center gap-1.5 text-center text-xs text-slate-400">
                   <ShieldCheck class="h-3.5 w-3.5" /> Thông tin chỉ dùng cho việc check-in sự kiện

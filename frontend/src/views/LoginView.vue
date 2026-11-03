@@ -130,7 +130,15 @@ const handleSendOtp = async () => {
   customerMessage.value = '';
   sendingOtp.value = true;
   try {
-    const res = await auth.sendOtp(customerEmail.value);
+    const res = await auth.sendOtp(customerEmail.value.trim());
+    if (res.data?.data?.token) {
+      // Người tham gia đã từng có tài khoản -> Không cần nhập mã OTP!
+      customerMessage.value = res.data?.data?.message || 'Đã nhận diện vé của bạn! Đang mở mã QR...';
+      setTimeout(() => {
+        router.push('/my-ticket');
+      }, 400);
+      return;
+    }
     otpSent.value = true;
     otpCode.value = '123456'; // Tự động điền sẵn mã 123456 để test nhanh
     customerMessage.value = res.data?.data?.message || 'Mã xác thực OTP kiểm thử là: 123456';
@@ -254,14 +262,14 @@ const onOtpInput = (e: Event) => {
               <span class="text-[11px] font-bold uppercase tracking-wider text-primary-600">Dành cho Khách tham gia</span>
               <h2 class="text-2xl font-black text-slate-900 tracking-tight mt-0.5">Kiểm tra vé tham dự</h2>
               <p class="text-xs text-slate-500 mt-1 leading-relaxed">
-                Nhập email bạn đã đăng ký vé. Hệ thống sẽ gửi mã xác thực để hiển thị mã QR vé của bạn.
+                Nhập email bạn đã đăng ký vé. Khách đã có tài khoản sẽ tự động xem vé ngay mà không cần nhập mã OTP.
               </p>
             </div>
 
             <div v-if="customerError" class="alert-error">{{ customerError }}</div>
             <div v-if="customerMessage" class="alert-success">{{ customerMessage }}</div>
 
-            <!-- BƯỚC 1: GỬI OTP -->
+            <!-- BƯỚC 1: GỬI EMAIL TRA CỨU -->
             <form v-if="!otpSent" @submit.prevent="handleSendOtp" class="space-y-4">
               <div>
                 <label class="field-label" for="ticket-email">Email đăng ký vé</label>
@@ -283,7 +291,7 @@ const onOtpInput = (e: Event) => {
               <button type="submit" :disabled="sendingOtp || !customerEmail" class="btn-primary btn-lg w-full">
                 <Loader2 v-if="sendingOtp" class="h-5 w-5 animate-spin" />
                 <template v-else>
-                  <span>Gửi mã xác thực để xem vé</span>
+                  <span>Tra cứu & Xem vé QR ngay</span>
                   <ArrowRight class="h-[18px] w-[18px]" />
                 </template>
               </button>

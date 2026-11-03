@@ -132,36 +132,94 @@ export class AuthService {
     };
   }
 
-  // Customer Send OTP
+  // Customer Send OTP (Khách tham gia nhận vé QR - Nếu đã từng có tài khoản thì không cần OTP)
   static async sendOtp(email: string) {
+    const cleanEmail = email.trim().toLowerCase();
+
+    // 1. Kiểm tra tài khoản đã tồn tại trong bảng users
+    let user: any = null;
+    const existingUsers = await query<any[]>(
+      'SELECT id, type, name, email, phone, status FROM users WHERE LOWER(email) = ?',
+      [cleanEmail]
+    );
+
+    if (existingUsers.length > 0) {
+      user = existingUsers[0];
+    } else {
+      // 2. Nếu chưa có trong users, kiểm tra xem email này đã từng có vé/đăng ký trong registrations chưa
+      const existingRegs = await query<any[]>(
+        'SELECT customer_id, full_name, phone, email FROM registrations WHERE LOWER(email) = ? ORDER BY id DESC LIMIT 1',
+        [cleanEmail]
+      );
+      if (existingRegs.length > 0) {
+        const reg = existingRegs[0];
+        if (reg.customer_id) {
+          const linkedUsers = await query<any[]>(
+            'SELECT id, type, name, email, phone, status FROM users WHERE id = ?',
+            [reg.customer_id]
+          );
+          if (linkedUsers.length > 0 && linkedUsers[0].type === 'CUSTOMER') {
+            user = linkedUsers[0];
+          }
+        }
+        if (!user) {
+          // Tạo bản ghi CUSTOMER cho người dùng này và liên kết
+          const regName = reg.full_name || cleanEmail.split('@')[0];
+          const regPhone = reg.phone || null;
+          const insertRes: any = await query(
+            `INSERT INTO users (type, name, email, phone, status) VALUES ('CUSTOMER', ?, ?, ?, 'ACTIVE')`,
+            [regName, cleanEmail, regPhone]
+          );
+          const newUserId = Number(insertRes.insertId);
+          await query('UPDATE registrations SET customer_id = ? WHERE LOWER(email) = ?', [newUserId, cleanEmail]);
+          user = { id: newUserId, type: 'CUSTOMER', name: regName, email: cleanEmail, phone: regPhone, status: 'ACTIVE' };
+        }
+      }
+    }
+
+    // NẾU NGƯỜI THAM GIA ĐÃ TỪNG CÓ TÀI KHOẢN:
+    if (user) {
+      if (user.status !== 'ACTIVE') {
+        throw new Error('Tài khoản của bạn đã bị khóa.');
+      }
+
+      // Khách tham gia sự kiện đã từng có tài khoản -> BỎ QUA MÃ OTP, CẤP TOKEN VÀ ĐĂNG NHẬP THẲNG
+      if (user.type === 'CUSTOMER') {
+        const token = jwt.sign(
+          { id: user.id, email: user.email, type: user.type },
+          ENV.JWT_SECRET,
+          { expiresIn: '7d' }
+        );
+
+        return {
+          already_exists: true,
+          token,
+          user: {
+            id: user.id,
+            name: user.name,
+            email: user.email,
+            phone: user.phone,
+            type: user.type,
+            permissions: [],
+          },
+          message: 'Tài khoản đã tồn tại trên hệ thống. Đang mở vé QR của bạn...',
+        };
+      } else {
+        throw new Error('Email này thuộc tài khoản ban tổ chức hoặc quản trị viên. Vui lòng đăng nhập tại cổng quản trị bằng mật khẩu.');
+      }
+    }
+
+    // 3. Nếu là người dùng mới chưa từng có tài khoản:
     // Generate 6-digit OTP (Mặc định '123456' để dễ dàng test thử)
     const otp = '123456';
     const expiresAt = new Date(Date.now() + 60 * 60 * 1000); // 60 phút hiệu lực
 
-    const existingUsers = await query<any[]>(
-      'SELECT id, type FROM users WHERE email = ?',
-      [email]
+    const defaultName = cleanEmail.split('@')[0];
+    await query(
+      `INSERT INTO users (type, name, email, otp_code, otp_expires_at, status) 
+       VALUES ('CUSTOMER', ?, ?, ?, ?, 'ACTIVE')`,
+      [defaultName, cleanEmail, otp, expiresAt]
     );
-
-    if (existingUsers.length === 0) {
-      // Create new customer account
-      const defaultName = email.split('@')[0];
-      await query(
-        `INSERT INTO users (type, name, email, otp_code, otp_expires_at, status) 
-         VALUES ('CUSTOMER', ?, ?, ?, ?, 'ACTIVE')`,
-        [defaultName, email, otp, expiresAt]
-      );
-    } else {
-      if (existingUsers[0].type !== 'CUSTOMER') {
-        throw new Error('Tài khoản này đăng nhập bằng email và mật khẩu.');
-      }
-      await query(
-        `UPDATE users 
-         SET otp_code = ?, otp_expires_at = ? 
-         WHERE email = ?`,
-        [otp, expiresAt, email]
-      );
-    }
 
     // Send Real Email with HTML formatting
     const html = `
@@ -179,12 +237,15 @@ export class AuthService {
     `;
 
     await sendEmail({
-      to: email,
+      to: cleanEmail,
       subject: `[Event QR] Mã OTP đăng nhập của bạn: ${otp}`,
       html,
     });
 
-    return { message: 'Mã xác thực OTP đã sẵn sàng! Mã mặc định kiểm thử là: 123456' };
+    return { 
+      already_exists: false,
+      message: 'Mã xác thực OTP đã sẵn sàng! Mã mặc định kiểm thử là: 123456' 
+    };
   }
 
   // Customer Verify OTP

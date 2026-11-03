@@ -4,17 +4,14 @@ import { RegistrationsService } from './registrations.service';
 export class RegistrationsController {
   static async register(req: Request, res: Response, next: NextFunction) {
     try {
-      if (!req.user) {
-        res.status(401).json({ success: false, message: 'Vui lòng đăng nhập trước khi đăng ký.' });
-        return;
-      }
       const { token, full_name, phone, email, address } = req.body;
       if (!token || !full_name || !phone || !email) {
         res.status(400).json({ success: false, message: 'Vui lòng điền đầy đủ họ tên, SĐT và email.' });
         return;
       }
 
-      const result = await RegistrationsService.register(req.user.id, {
+      const customerId = req.user?.id || 0;
+      const result = await RegistrationsService.register(customerId, {
         token,
         full_name,
         phone,
