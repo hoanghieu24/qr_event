@@ -3041,7 +3041,7 @@ onBeforeUnmount(stopScanner);
                 <button
                   class="secondary-button"
                   :disabled="eventEmployeeCount >= selectedEvent.max_employees || selectedEvent.status !== 'PUBLISHED'"
-                  @click="showAssignmentModal = true"
+                  @click="errorMessage = ''; showAssignmentModal = true"
                 >
                   <Plus :size="16" />Phân công
                 </button>
@@ -3421,6 +3421,10 @@ onBeforeUnmount(stopScanner);
         <span class="eyebrow">{{ selectedEvent?.name }}</span>
         <h2>Phân công nhân sự</h2>
         <p class="muted">Chọn nhiệm vụ sẽ hiển thị trong quyền của nhân sự ở sự kiện này.</p>
+        <div v-if="errorMessage" class="error-banner" style="margin-bottom: 12px; display: flex; align-items: center; gap: 8px;">
+          <AlertTriangle :size="16" class="shrink-0 text-rose-500" />
+          <span style="font-size: 13px; color: #e11d48; font-weight: 500;">{{ errorMessage }}</span>
+        </div>
         <label class="control-label">Nhân sự</label>
         <select v-model="assignment.staff_id" required class="text-control">
           <option value="" disabled>Chọn nhân sự</option>

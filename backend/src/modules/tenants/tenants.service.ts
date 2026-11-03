@@ -726,6 +726,10 @@ export class TenantsService {
       );
       if (!members.length) throw new Error('Nhân sự không thuộc khách thuê này hoặc đang bị khóa.');
 
+      const maxEmployees = Math.max(Number(events[0].max_employees || 0), 20);
+      const maxReferrers = Math.max(Number(events[0].max_referrers || 0), 10);
+      const maxScanners = Math.max(Number(events[0].max_scanners || 0), 10);
+
       const [current]: any = await conn.query(`
         SELECT staff_id, is_enabled, can_invite, can_scan FROM staff_event_quotas WHERE event_id = ? AND staff_id = ?
       `, [eventId, data.staff_id]);
@@ -735,16 +739,16 @@ export class TenantsService {
           FROM staff_event_quotas WHERE event_id = ? AND is_enabled = 1
         `, [eventId]);
         const count = counts[0] || {};
-        if (Number(count.employees || 0) >= Number(events[0].max_employees)) throw new Error('Sự kiện đã dùng hết số nhân sự theo gói.');
-        if (role.can_invite && Number(count.referrers || 0) >= Number(events[0].max_referrers)) throw new Error('Sự kiện đã dùng hết số người giới thiệu theo gói.');
-        if (role.can_scan && Number(count.scanners || 0) >= Number(events[0].max_scanners)) throw new Error('Sự kiện đã dùng hết số người soát vé theo gói.');
+        if (Number(count.employees || 0) >= maxEmployees) throw new Error('Sự kiện đã dùng hết số nhân sự theo gói.');
+        if (role.can_invite && Number(count.referrers || 0) >= maxReferrers) throw new Error('Sự kiện đã dùng hết số người giới thiệu theo gói.');
+        if (role.can_scan && Number(count.scanners || 0) >= maxScanners) throw new Error('Sự kiện đã dùng hết số người soát vé theo gói.');
       } else {
         const [counts]: any = await conn.query(`
           SELECT SUM(can_invite = 1) AS referrers, SUM(can_scan = 1) AS scanners
           FROM staff_event_quotas WHERE event_id = ? AND is_enabled = 1 AND staff_id <> ?
         `, [eventId, data.staff_id]);
-        if (role.can_invite && Number(counts[0]?.referrers || 0) >= Number(events[0].max_referrers)) throw new Error('Sự kiện đã dùng hết số người giới thiệu theo gói.');
-        if (role.can_scan && Number(counts[0]?.scanners || 0) >= Number(events[0].max_scanners)) throw new Error('Sự kiện đã dùng hết số người soát vé theo gói.');
+        if (role.can_invite && Number(counts[0]?.referrers || 0) >= maxReferrers) throw new Error('Sự kiện đã dùng hết số người giới thiệu theo gói.');
+        if (role.can_scan && Number(counts[0]?.scanners || 0) >= maxScanners) throw new Error('Sự kiện đã dùng hết số người soát vé theo gói.');
       }
 
       await conn.query(`

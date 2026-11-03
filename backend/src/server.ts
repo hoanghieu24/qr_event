@@ -62,6 +62,22 @@ async function bootstrap() {
     // Auto-check and initialize tables if empty (e.g. freshly created Aiven DB)
     await autoInitDatabaseIfEmpty();
 
+    // Nâng hạn mức nhân sự và soát vé cho các sự kiện thử nghiệm để thuận tiện test
+    try {
+      const conn = await pool.getConnection();
+      await conn.query(`
+        UPDATE events 
+        SET max_scanners = GREATEST(max_scanners, 10), 
+            max_referrers = GREATEST(max_referrers, 10), 
+            max_employees = GREATEST(max_employees, 20)
+        WHERE is_trial = 1 OR max_scanners < 10
+      `);
+      conn.release();
+      console.log('✅ Đã cập nhật hạn mức nhân sự/soát vé tối thiểu 10 cho các sự kiện.');
+    } catch (e: any) {
+      console.warn('⚠️ Cập nhật hạn mức thất bại:', e.message);
+    }
+
     const httpServer = http.createServer(app);
     initSocketServer(httpServer);
 
