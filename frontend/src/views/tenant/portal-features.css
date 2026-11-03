@@ -1,0 +1,612 @@
+.quota-panel{display:flex;align-items:center;justify-content:space-between;gap:18px;padding:17px 19px}.quota-copy{display:flex;align-items:flex-start;gap:13px}.quota-copy .metric-icon{flex:0 0 auto}.quota-copy h2{margin:4px 0;color:#2a4658;font-family:'Be Vietnam Pro',sans-serif;font-size:15px;font-weight:800}.quota-copy p{margin:0;color:#6f828e;font-size:11px}.quota-copy small{display:block;margin-top:5px;color:#9aa7af;font-size:10px}.quota-panel>.primary-button{flex:0 0 auto}.plan-panel{padding-bottom:15px}.plan-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(205px,1fr));gap:11px;padding:15px}.plan-option{display:flex;min-height:200px;flex-direction:column;align-items:flex-start;border:1px solid #e5ebef;border-radius:13px;background:#fff;padding:15px}.plan-icon{display:grid;width:34px;height:34px;place-items:center;border-radius:10px;background:#eaf3fb;color:#4d85b5}.plan-option>b{margin-top:11px;color:#2e4859;font-size:12px}.plan-option>p{min-height:30px;margin:5px 0 9px;color:#8796a0;font-size:10px;line-height:1.5}.plan-option>strong{color:#276687;font-family:'Be Vietnam Pro',sans-serif;font-size:18px}.plan-option>small{margin-top:3px;color:#96a4ad;font-size:9px}.plan-option>.secondary-button{width:100%;margin-top:auto;padding-top:11px}.event-create-modal{width:min(100%,540px)}.text-area-control{height:auto;min-height:76px;padding:10px 11px;resize:vertical}.form-two-col{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}.scanner-shell{min-height:100vh;background:#f5f8fa}.scanner-topbar{display:flex;height:68px;align-items:center;gap:18px;border-bottom:1px solid #e5ebef;background:#fff;padding:0 max(24px,calc((100vw - 1050px)/2))}.scanner-heading{display:grid;min-width:0;flex:1;gap:3px;padding-left:18px;border-left:1px solid #e6ecef}.scanner-heading>b{overflow:hidden;color:#2b4657;font-size:12px;text-overflow:ellipsis;white-space:nowrap}.scanner-logout{display:flex;align-items:center;gap:7px;border:0;background:transparent;color:#657b89;font-size:11px;font-weight:700}.scanner-content{width:min(100% - 28px,560px);margin:38px auto}.scanner-intro h1{margin:7px 0;color:#203e51;font-family:'Be Vietnam Pro',sans-serif;font-size:25px;font-weight:800;letter-spacing:-.04em}.scanner-intro p{margin:0;color:#84939c;font-size:12px;line-height:1.6}.scanner-event-select{display:flex;height:44px;align-items:center;gap:9px;margin:19px 0 12px;border:1px solid #dce5eb;border-radius:10px;background:#fff;padding:0 11px;color:#54839a}.scanner-event-select select{width:100%;border:0;background:transparent;color:#405a6a;font-size:11px;font-weight:700;outline:0}.scanner-card{display:grid;gap:13px;border:1px solid #e2e9ed;border-radius:16px;background:#fff;padding:15px;box-shadow:0 12px 35px #2746590a}.scanner-camera{position:relative;height:300px;min-height:300px;max-height:300px;overflow:hidden;border-radius:12px;background:#102939}.scanner-camera #tenant-qr-reader{position:absolute!important;inset:0!important;z-index:1;width:100%!important;height:100%!important;border:0!important;overflow:hidden!important}.scanner-camera #tenant-qr-reader video,.scanner-camera #tenant-qr-reader canvas.scanner-live-canvas{width:100%!important;height:100%!important;object-fit:cover!important;display:block!important}#qr-shaded-region{display:none!important}.scanner-camera #tenant-qr-reader__dashboard_section_csr button{border:0;border-radius:7px;background:#fff;padding:6px 10px;color:#274b61;font-size:10px}.camera-placeholder{position:absolute;z-index:2;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:9px;background:linear-gradient(135deg,#17394d,#1c4b61);color:#a8dcca;text-align:center;padding:20px}.camera-placeholder>b{color:#fff;font-size:13px}.camera-placeholder>span{max-width:270px;color:#bed0d8;font-size:10px;line-height:1.5}.camera-placeholder .primary-button{margin-top:5px}.scanner-feedback{position:relative;display:flex;min-height:63px;align-items:center;gap:11px;overflow:hidden;border:1px solid #e5ebef;border-radius:11px;background:#f8fafb;padding:10px 12px}.feedback-mark{display:grid;width:36px;height:36px;flex:0 0 auto;place-items:center;border-radius:11px;background:#e9f1f5;color:#4b829a}.scanner-feedback>div:nth-child(2){display:grid;gap:4px}.scanner-feedback>div:nth-child(2)>b{color:#395363;font-size:11px}.scanner-feedback>div:nth-child(2)>span{color:#81919b;font-size:10px}.feedback-success{border-color:#c8e8d5;background:#f0faf4}.feedback-success .feedback-mark{background:#d9f2e2;color:#348454}.feedback-error{border-color:#efd2d2;background:#fff7f7}.feedback-error .feedback-mark{background:#f9e3e3;color:#b45c5c}.scan-progress{position:absolute;right:0;bottom:0;left:0;height:3px;background:#4a9b77;animation:scan-progress 1.3s ease-out forwards}.scanner-footnote{display:flex;align-items:center;justify-content:center;gap:6px;margin:14px 0;color:#8a9aa3;font-size:10px}.stop-camera{justify-content:center}.scanner-content .error-box{font-size:11px}.scanner-shell .brand-lockup{display:flex;align-items:center;gap:8px;color:#1c435a;font-family:'Be Vietnam Pro',sans-serif;font-size:14px;font-weight:800;text-decoration:none}.scanner-shell .brand-lockup>span:last-child>span,.mobile-brand>span:last-child{color:#48a48a}.scanner-shell .brand-icon{display:grid;width:34px;height:34px;place-items:center;border:1px solid #dce9ef;border-radius:11px;background:#eaf3f7;color:#1e648a}.mobile-logout{display:none}@keyframes scan-progress{from{width:100%}to{width:0}}@media(max-width:650px){.quota-panel{align-items:flex-start;flex-direction:column}.quota-panel>.primary-button{width:100%;justify-content:center}.plan-grid{grid-template-columns:1fr}.form-two-col{grid-template-columns:1fr}.scanner-topbar{height:60px;gap:10px;padding:0 14px}.scanner-heading{padding-left:10px}.scanner-heading .eyebrow{font-size:8px}.scanner-heading>b{max-width:47vw;font-size:10px}.scanner-logout{gap:4px;font-size:0}.scanner-logout svg{width:18px}.scanner-content{margin-top:26px}.scanner-intro h1{font-size:22px}.scanner-camera{height:270px;min-height:270px;max-height:270px}}
+
+
+/* =========================================================
+   MODERN MODAL & PAYMENT SYSTEM (REDESIGNED UI)
+   ========================================================= */
+
+.modal-scrim {
+  position: fixed !important;
+  z-index: 100 !important;
+  inset: 0 !important;
+  display: grid !important;
+  place-items: center !important;
+  overflow-y: auto !important;
+  background: rgba(15, 23, 42, 0.65) !important;
+  padding: 24px 16px !important;
+  backdrop-filter: blur(8px) !important;
+  -webkit-backdrop-filter: blur(8px) !important;
+}
+
+.modal-card {
+  position: relative !important;
+  width: min(100%, 640px) !important;
+  max-height: calc(100vh - 48px) !important;
+  overflow-y: auto !important;
+  border: 1px solid #e2e8f0 !important;
+  border-radius: 24px !important;
+  background: #ffffff !important;
+  padding: 32px !important;
+  box-shadow: 0 25px 60px -15px rgba(15, 23, 42, 0.3) !important;
+}
+
+.event-create-modal {
+  width: min(100%, 720px) !important;
+}
+
+.modal-header-modern {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 6px;
+}
+
+.modal-icon-badge {
+  display: grid;
+  width: 48px;
+  height: 48px;
+  place-items: center;
+  border-radius: 14px;
+  background: linear-gradient(135deg, #e0f2fe, #dbeafe);
+  color: #0284c7;
+  flex-shrink: 0;
+}
+
+.modal-icon-badge.badge-amber {
+  background: linear-gradient(135deg, #fef3c7, #fef08a);
+  color: #d97706;
+}
+
+.modal-eyebrow {
+  display: block;
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0.1em;
+  color: #0284c7;
+  text-transform: uppercase;
+}
+
+.modal-title {
+  margin: 3px 0 0 0;
+  font-family: 'Be Vietnam Pro', sans-serif;
+  font-size: 24px;
+  font-weight: 800;
+  letter-spacing: -0.03em;
+  color: #0f172a;
+}
+
+.modal-subtitle {
+  margin: 0 0 22px 0;
+  font-size: 13px;
+  line-height: 1.6;
+  color: #64748b;
+}
+
+.modal-close-modern {
+  display: grid;
+  width: 36px;
+  height: 36px;
+  place-items: center;
+  border: 1px solid #e2e8f0;
+  border-radius: 10px;
+  background: #f8fafc;
+  color: #64748b;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.modal-close-modern:hover {
+  background: #e2e8f0;
+  color: #0f172a;
+}
+
+/* Form Sections */
+.form-section {
+  background: #f8fafc;
+  border: 1px solid #e2e8f0;
+  border-radius: 16px;
+  padding: 18px 20px;
+  margin-bottom: 18px;
+}
+
+.form-section-title {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 14px;
+  font-weight: 800;
+  color: #1e293b;
+  margin-bottom: 14px;
+}
+
+.step-num {
+  display: grid;
+  width: 24px;
+  height: 24px;
+  place-items: center;
+  border-radius: 50%;
+  background: #0284c7;
+  color: #ffffff;
+  font-size: 12px;
+  font-weight: 800;
+}
+
+/* Package Selection Grid */
+.package-selection-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+  gap: 12px;
+}
+
+.pkg-card {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  padding: 14px;
+  border: 2px solid #e2e8f0;
+  border-radius: 14px;
+  background: #ffffff;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.pkg-card:hover {
+  border-color: #94a3b8;
+  transform: translateY(-2px);
+  box-shadow: 0 6px 15px -3px rgba(0, 0, 0, 0.05);
+}
+
+.pkg-card-selected {
+  border-color: #0284c7 !important;
+  background: #f0f9ff !important;
+  box-shadow: 0 0 0 1px #0284c7, 0 8px 20px -4px rgba(2, 132, 199, 0.15) !important;
+}
+
+.pkg-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+  margin-bottom: 8px;
+}
+
+.pkg-tag-free {
+  font-size: 11px;
+  font-weight: 700;
+  color: #059669;
+  background: #ecfdf5;
+  padding: 2px 8px;
+  border-radius: 6px;
+}
+
+.pkg-price-free {
+  font-size: 13px;
+  font-weight: 800;
+  color: #059669;
+}
+
+.pkg-tag-paid {
+  font-size: 11px;
+  font-weight: 700;
+  color: #0284c7;
+  background: #e0f2fe;
+  padding: 2px 8px;
+  border-radius: 6px;
+}
+
+.pkg-price-paid {
+  font-size: 12px;
+  font-weight: 800;
+  color: #0284c7;
+}
+
+.pkg-tag-buy {
+  font-size: 10px;
+  font-weight: 700;
+  color: #d97706;
+  background: #fef3c7;
+  padding: 2px 6px;
+  border-radius: 6px;
+}
+
+.pkg-price-amount {
+  font-size: 14px;
+  font-weight: 800;
+  color: #0f172a;
+}
+
+.pkg-name {
+  font-size: 13px;
+  font-weight: 800;
+  color: #0f172a;
+  margin-bottom: 6px;
+}
+
+.pkg-stats {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  font-size: 11px;
+  color: #64748b;
+  margin-bottom: 8px;
+}
+
+.pkg-badge-remaining {
+  margin-top: auto;
+  font-size: 11px;
+  font-weight: 700;
+  color: #059669;
+  border-top: 1px dashed #cbd5e1;
+  padding-top: 6px;
+}
+
+.pkg-note-payment {
+  margin-top: auto;
+  font-size: 10px;
+  font-weight: 700;
+  color: #b45309;
+  border-top: 1px dashed #cbd5e1;
+  padding-top: 6px;
+}
+
+/* Modern Inputs */
+.modern-label {
+  display: block;
+  font-size: 12px;
+  font-weight: 700;
+  color: #334155;
+  margin-bottom: 6px;
+}
+
+.modern-label .required {
+  color: #e11d48;
+}
+
+.modern-input-wrap {
+  position: relative;
+  display: flex;
+  align-items: center;
+}
+
+.input-icon-left {
+  position: absolute;
+  left: 14px;
+  color: #94a3b8;
+  pointer-events: none;
+}
+
+.modern-input {
+  width: 100%;
+  height: 44px;
+  border: 1px solid #cbd5e1;
+  border-radius: 12px;
+  background: #ffffff;
+  padding: 0 14px 0 42px;
+  font-size: 13px;
+  color: #0f172a;
+  outline: none;
+  transition: all 0.15s ease;
+}
+
+.modern-input:focus {
+  border-color: #0284c7;
+  box-shadow: 0 0 0 3px rgba(2, 132, 199, 0.15);
+}
+
+.modern-textarea {
+  width: 100%;
+  border: 1px solid #cbd5e1;
+  border-radius: 12px;
+  background: #ffffff;
+  padding: 10px 14px;
+  font-size: 13px;
+  color: #0f172a;
+  outline: none;
+  resize: vertical;
+  transition: all 0.15s ease;
+}
+
+.modern-textarea:focus {
+  border-color: #0284c7;
+  box-shadow: 0 0 0 3px rgba(2, 132, 199, 0.15);
+}
+
+/* Modal Footer */
+.modal-footer-modern {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 12px;
+  margin-top: 24px;
+  padding-top: 18px;
+  border-top: 1px solid #e2e8f0;
+}
+
+.btn-cancel {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 10px 18px;
+  border: 1px solid #cbd5e1;
+  border-radius: 12px;
+  background: #ffffff;
+  font-size: 13px;
+  font-weight: 700;
+  color: #475569;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.btn-cancel:hover {
+  background: #f1f5f9;
+  color: #0f172a;
+}
+
+.btn-submit {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 11px 22px;
+  border: none;
+  border-radius: 12px;
+  background: linear-gradient(135deg, #0284c7, #0369a1);
+  font-size: 13px;
+  font-weight: 700;
+  color: #ffffff;
+  cursor: pointer;
+  box-shadow: 0 4px 14px rgba(2, 132, 199, 0.3);
+  transition: all 0.2s ease;
+}
+
+.btn-submit:hover:not(:disabled) {
+  background: linear-gradient(135deg, #0369a1, #075985);
+  transform: translateY(-1px);
+  box-shadow: 0 6px 18px rgba(2, 132, 199, 0.4);
+}
+
+.btn-submit:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+  box-shadow: none;
+}
+
+/* =========================================================
+   VIETQR PAYMENT MODAL
+   ========================================================= */
+
+.payment-modal-card {
+  width: min(100%, 780px) !important;
+}
+
+.payment-modal-body {
+  display: grid;
+  grid-template-columns: 280px 1fr;
+  gap: 28px;
+  margin-top: 18px;
+}
+
+@media (max-width: 720px) {
+  .payment-modal-body {
+    grid-template-columns: 1fr;
+  }
+}
+
+.qr-col {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+}
+
+.qr-frame {
+  width: 100%;
+  max-width: 270px;
+  aspect-ratio: 1;
+  background: #ffffff;
+  border: 1px solid #e2e8f0;
+  border-radius: 18px;
+  padding: 12px;
+  box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.08);
+  display: grid;
+  place-items: center;
+}
+
+.vietqr-img {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  border-radius: 10px;
+}
+
+.qr-hint {
+  margin-top: 12px;
+  font-size: 11px;
+  line-height: 1.5;
+  color: #64748b;
+  max-width: 250px;
+}
+
+.details-col {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.payment-summary-box {
+  background: #f8fafc;
+  border: 1px solid #e2e8f0;
+  border-radius: 14px;
+  padding: 12px 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.summary-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-size: 12px;
+}
+
+.summary-label {
+  color: #64748b;
+}
+
+.summary-val {
+  color: #0f172a;
+  font-weight: 700;
+}
+
+.bank-info-box {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.bank-field {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 14px;
+  border: 1px solid #f1f5f9;
+  border-radius: 10px;
+  background: #f8fafc;
+  font-size: 12px;
+}
+
+.highlight-field {
+  background: #ffffff !important;
+  border: 1px solid #e2e8f0 !important;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.04);
+}
+
+.field-content {
+  border-color: #bae6fd !important;
+  background: #f0f9ff !important;
+}
+
+.bf-label {
+  display: block;
+  font-size: 11px;
+  color: #64748b;
+  margin-bottom: 2px;
+}
+
+.bf-value {
+  color: #0f172a;
+}
+
+.copy-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 5px 10px;
+  border: 1px solid #cbd5e1;
+  border-radius: 8px;
+  background: #ffffff;
+  font-size: 11px;
+  font-weight: 700;
+  color: #334155;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.copy-pill:hover {
+  background: #f1f5f9;
+  border-color: #94a3b8;
+}
+
+.payment-notice {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 10px 12px;
+  border-radius: 10px;
+  background: #fefce8;
+  border: 1px solid #fef08a;
+  font-size: 11px;
+  line-height: 1.5;
+  color: #854d0e;
+}
+
+.payment-notice .notice-icon {
+  font-size: 14px;
+  flex-shrink: 0;
+}
+
+/* Banner Cảnh Báo Chưa Thanh Toán */
+.payment-alert-card {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 18px;
+  padding: 16px 20px;
+  border-radius: 16px;
+  background: linear-gradient(135deg, #fffbeb, #fef3c7);
+  border: 1px solid #fde68a;
+  margin-bottom: 18px;
+  box-shadow: 0 4px 12px rgba(217, 119, 6, 0.08);
+}
+
+@media (max-width: 680px) {
+  .payment-alert-card {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+}
+
+.payment-alert-left {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+}
+
+.payment-alert-icon {
+  font-size: 24px;
+  line-height: 1;
+}
+
+.payment-alert-title {
+  font-size: 14px;
+  font-weight: 800;
+  color: #92400e;
+  margin-bottom: 3px;
+}
+
+.payment-alert-desc {
+  margin: 0;
+  font-size: 12px;
+  color: #b45309;
+  line-height: 1.5;
+}
+
+.payment-alert-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 16px;
+  border: none;
+  border-radius: 10px;
+  background: #d97706;
+  color: #ffffff;
+  font-size: 12px;
+  font-weight: 700;
+  cursor: pointer;
+  white-space: nowrap;
+  box-shadow: 0 4px 10px rgba(217, 119, 6, 0.25);
+  transition: all 0.15s ease;
+}
+
+.payment-alert-btn:hover {
+  background: #b45309;
+  transform: translateY(-1px);
+}
+
+.status-amber {
+  background: #fef3c7 !important;
+  color: #b45309 !important;
+  border: 1px solid #fde68a !important;
+}

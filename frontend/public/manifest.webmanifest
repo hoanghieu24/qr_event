@@ -1,0 +1,24 @@
+{
+  "name": "KTSQR · Quản lý sự kiện & Check-in",
+  "short_name": "KTSQR",
+  "description": "Nền tảng phát hành vé và check-in sự kiện bảo mật qua mã QR",
+  "start_url": "/",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#090d16",
+  "theme_color": "#4f46e5",
+  "icons": [
+    {
+      "src": "/icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "/icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any maskable"
+    }
+  ]
+}
