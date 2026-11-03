@@ -4,6 +4,7 @@ import { query, withTransaction } from '../../config/database';
 import { uploadImageToCloudinary } from '../../config/cloudinary';
 import { Realtime } from '../../realtime/socket';
 import { ENV } from '../../config/env';
+import { InvitesService } from '../invites/invites.service';
 
 const FREE_EVENT_LIMIT = 3;
 
@@ -813,6 +814,61 @@ export class TenantsService {
     await query(`DELETE q FROM staff_event_quotas q JOIN events e ON e.id = q.event_id WHERE e.tenant_id = ? AND q.staff_id = ?`, [tenantId, userId]);
     await query('DELETE FROM tenant_users WHERE tenant_id = ? AND user_id = ?', [tenantId, userId]);
     return { success: true, message: 'Đã xóa nhân sự khỏi đơn vị thành công.' };
+  }
+
+  static async listEventInvites(tenantId: number, eventId: number) {
+    await this.requireTenantEvent(tenantId, eventId);
+    const rows = await query<any[]>(`
+      SELECT il.*, u.name AS referrer_name, u.email AS referrer_email,
+             (SELECT COUNT(*) FROM registrations r WHERE r.invite_link_id = il.id) AS total_registered,
+             (SELECT COUNT(*) FROM registrations r WHERE r.invite_link_id = il.id AND r.status = 'APPROVED') AS total_approved,
+             (SELECT COUNT(*) FROM registrations r WHERE r.invite_link_id = il.id AND r.ticket_status = 'USED') AS total_checked_in
+      FROM invite_links il
+      JOIN users u ON il.referrer_id = u.id
+      WHERE il.event_id = ?
+      ORDER BY il.id DESC
+    `, [eventId]);
+
+    // Tự động rút gọn link cũ nếu dài hơn 12 ký tự hoặc có tiền tố inv_
+    for (const r of rows) {
+      if (r.token && (r.token.length > 12 || r.token.startsWith('inv_')) && r.status === 'ACTIVE') {
+        try {
+          const shortToken = await InvitesService.generateUniqueShortToken();
+          const newSig = InvitesService.generateSignature(r.event_id, r.referrer_id, shortToken);
+          await query(
+            'UPDATE invite_links SET legacy_token = token, token = ?, signature = ? WHERE id = ?',
+            [shortToken, newSig, r.id]
+          );
+          r.legacy_token = r.token;
+          r.token = shortToken;
+          r.signature = newSig;
+        } catch (e) {
+          console.warn('Auto shorten link error:', e);
+        }
+      }
+    }
+
+    return rows.map((r) => ({
+      ...r,
+      url: `${ENV.FRONTEND_URL}/invite/${r.token}`,
+      invite_url: `${ENV.FRONTEND_URL}/invite/${r.token}`,
+    }));
+  }
+
+  static async createEventInvite(tenantId: number, eventId: number, data: {
+    referrer_id?: number;
+    max_registrations?: number;
+    expires_in_days?: number;
+  }, adminUserId: number) {
+    await this.requireTenantEvent(tenantId, eventId);
+    const referrerId = data.referrer_id ? Number(data.referrer_id) : adminUserId;
+    return await InvitesService.createInviteLink({
+      event_id: eventId,
+      referrer_id: referrerId,
+      expires_in_days: data.expires_in_days ? Number(data.expires_in_days) : 60,
+      max_registrations: data.max_registrations ? Number(data.max_registrations) : 1000,
+      is_admin: true,
+    });
   }
 
   private static async requireTenantEvent(tenantId: number, eventId: number) {

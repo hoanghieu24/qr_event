@@ -1,10 +1,11 @@
 <script setup lang="ts">
-import { computed, nextTick, onBeforeUnmount, onMounted, ref } from 'vue';
+import { computed, nextTick, onBeforeUnmount, onMounted, ref, reactive } from 'vue';
 import { useRouter } from 'vue-router';
 import { Html5Qrcode } from 'html5-qrcode';
 import api from '../../api/client';
 import { useAuthStore } from '../../stores/auth';
 import { isTenantMode, isAdminMode } from '../../utils/portalMode';
+import InviteCardModal from '../../components/InviteCardModal.vue';
 import {
   Activity,
   ArrowDownToLine,
@@ -71,7 +72,7 @@ const team = ref<any[]>([]);
 const eventTeam = ref<any[]>([]);
 const usage = ref<any>(null);
 const plans = ref<any[]>([]);
-const activePanel = ref<'overview' | 'attendees' | 'team' | 'scanner' | 'disputes'>('overview');
+const activePanel = ref<'overview' | 'invites' | 'attendees' | 'team' | 'scanner' | 'disputes'>('overview');
 const manualScanCode = ref('');
 const scannerEvents = ref<any[]>([]);
 const selectedScannerEventId = ref<number | null>(null);
@@ -108,6 +109,24 @@ const showZoomQrModal = ref(false);
 const loadingStaffData = ref(false);
 const approvalFilterStatus = ref<'ALL' | 'PENDING' | 'APPROVED' | 'REJECTED'>('ALL');
 const approvalSearch = ref('');
+
+// Tenant Admin Invites & QR & VIP Invitation Card State
+const tenantEventInvites = ref<any[]>([]);
+const tenantActiveInviteLink = ref<any>(null);
+const tenantInviteQrUrl = ref('');
+const copiedTenantInviteLink = ref(false);
+const showTenantZoomQrModal = ref(false);
+const showTenantInviteModal = ref(false);
+const newInviteForm = reactive({
+  referrer_id: '',
+  max_registrations: 1000,
+  expires_in_days: 60,
+});
+const creatingInvite = ref(false);
+
+// VIP Online Invitation Card Modal State for Tenant Admin
+const showAdminInviteCardModal = ref(false);
+const adminCardData = ref<any>(null);
 
 const staffSelectedEvent = computed(() => {
   return staffEvents.value.find((e) => e.id === selectedStaffEventId.value) || staffEvents.value[0] || null;
@@ -477,8 +496,126 @@ const loadEventDetails = async (event: any) => {
     ]);
     attendees.value = attendeeRes.data.data;
     eventTeam.value = teamRes.data.data;
+    await loadTenantEventInvites(event.id);
   } catch (error: any) {
     errorMessage.value = explainError(error);
+  }
+};
+
+const loadTenantEventInvites = async (eventId: number) => {
+  try {
+    const res = await api.get(`/tenants/portal/events/${eventId}/invites`);
+    const invites = res.data.data || [];
+    
+    // Find active link or pick the most recent
+    let active = invites.find((l: any) => l.status === 'ACTIVE');
+    if (!active && selectedEvent.value?.status === 'PUBLISHED') {
+      try {
+        const createRes = await api.post(`/tenants/portal/events/${eventId}/invites`, {
+          max_registrations: selectedEvent.value.capacity || 1000,
+          expires_in_days: 60,
+        });
+        active = createRes.data?.data;
+        if (active) {
+          invites.unshift(active);
+        }
+      } catch (e) {
+        console.warn('Auto create tenant invite link error:', e);
+      }
+    }
+
+    if (active) {
+      active.invite_url = active.token ? `${window.location.origin}/invite/${active.token}` : (active.invite_url || active.url || '');
+      tenantActiveInviteLink.value = active;
+      tenantInviteQrUrl.value = await QRCode.toDataURL(active.invite_url, { width: 300, margin: 2 });
+    } else {
+      tenantActiveInviteLink.value = null;
+      tenantInviteQrUrl.value = '';
+    }
+
+    tenantEventInvites.value = invites.map((inv: any) => ({
+      ...inv,
+      invite_url: inv.token ? `${window.location.origin}/invite/${inv.token}` : (inv.invite_url || inv.url || ''),
+    }));
+  } catch (e) {
+    console.warn('loadTenantEventInvites error:', e);
+  }
+};
+
+const copyTenantInviteLink = async (url?: string) => {
+  const targetUrl = url || tenantActiveInviteLink.value?.invite_url;
+  if (!targetUrl) return;
+  await navigator.clipboard.writeText(targetUrl);
+  copiedTenantInviteLink.value = true;
+  setTimeout(() => {
+    copiedTenantInviteLink.value = false;
+  }, 2000);
+};
+
+const shareTenantInviteLink = async (url?: string) => {
+  const targetUrl = url || tenantActiveInviteLink.value?.invite_url;
+  if (!targetUrl) return;
+  const eventName = selectedEvent.value?.name || 'Sự kiện';
+  if (typeof navigator !== 'undefined' && navigator.share) {
+    try {
+      await navigator.share({
+        title: `Thư mời tham dự: ${eventName}`,
+        text: `Trân trọng kính mời bạn tham gia ${eventName}. Đăng ký nhận vé QR tại: ${targetUrl}`,
+        url: targetUrl,
+      });
+    } catch (e) {
+      // User cancelled
+    }
+  } else {
+    await copyTenantInviteLink(targetUrl);
+  }
+};
+
+const openAdminInviteCard = (att?: any) => {
+  const ev = selectedEvent.value;
+  const link = tenantActiveInviteLink.value;
+  if (att) {
+    adminCardData.value = {
+      attendee_name: att.full_name || 'Kính mời Quý Khách',
+      attendee_role: 'Khách Mời Danh Dự (VIP)',
+      event_name: ev?.name,
+      event_location: ev?.location,
+      event_start_at: ev?.start_at,
+      qr_data: att.ticket_code || link?.invite_url || window.location.origin,
+      code_label: att.ticket_code ? `MÃ VÉ: ${att.ticket_code}` : 'QUÉT ĐỂ ĐĂNG KÝ (VIP)',
+    };
+  } else {
+    adminCardData.value = {
+      attendee_name: 'Kính mời Quý Khách',
+      attendee_role: 'Khách Mời Danh Dự (VIP)',
+      event_name: ev?.name,
+      event_location: ev?.location,
+      event_start_at: ev?.start_at,
+      qr_data: link?.invite_url || window.location.origin,
+      code_label: 'QUÉT ĐỂ ĐĂNG KÝ THAM DỰ (VIP)',
+    };
+  }
+  showAdminInviteCardModal.value = true;
+};
+
+const handleCreateTenantInvite = async () => {
+  if (!selectedEvent.value) return;
+  creatingInvite.value = true;
+  try {
+    await api.post(`/tenants/portal/events/${selectedEvent.value.id}/invites`, {
+      referrer_id: newInviteForm.referrer_id ? Number(newInviteForm.referrer_id) : undefined,
+      max_registrations: Number(newInviteForm.max_registrations || 1000),
+      expires_in_days: Number(newInviteForm.expires_in_days || 60),
+    });
+    showTenantInviteModal.value = false;
+    newInviteForm.referrer_id = '';
+    newInviteForm.max_registrations = 1000;
+    newInviteForm.expires_in_days = 60;
+    await loadTenantEventInvites(selectedEvent.value.id);
+  } catch (e: any) {
+    alert(e.response?.data?.message || e.message);
+  } finally {
+    creatingInvite.value = false;
   }
 };
 
@@ -2741,6 +2878,12 @@ onBeforeUnmount(stopScanner);
         <CalendarDays :size="18" />Tổng quan
       </button>
       <button
+        @click="activePanel = 'invites'"
+        :class="['nav-item', activePanel === 'invites' && 'nav-active']"
+      >
+        <Sparkles :size="18" />Thư mời & Link QR
+      </button>
+      <button
         @click="activePanel = 'attendees'"
         :class="['nav-item', activePanel === 'attendees' && 'nav-active']"
       >
@@ -3295,6 +3438,172 @@ onBeforeUnmount(stopScanner);
               </article>
             </div>
 
+            <!-- KHỐI PHÁT HÀNH LINK MỜI, MÃ QR & THƯ MỜI VIP DÀNH CHO ADMIN / BAN TỔ CHỨC -->
+            <section
+              v-if="activePanel === 'overview' || activePanel === 'invites'"
+              class="card p-4 sm:p-5 bg-white rounded-2xl border border-slate-200 shadow-xs space-y-4"
+              :class="activePanel === 'invites' ? 'ring-2 ring-primary-500/20' : ''"
+            >
+              <div class="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 border-b border-slate-100 pb-3">
+                <div>
+                  <div class="flex items-center gap-2">
+                    <span class="inline-flex items-center rounded-full bg-primary-50 px-2.5 py-0.5 text-[11px] font-bold text-primary-700 border border-primary-200">
+                      💌 Kênh Phát Hành Thư Mời & Mã QR
+                    </span>
+                    <span class="text-xs text-slate-400">· Dành cho Ban Tổ Chức</span>
+                  </div>
+                  <h2 class="text-base sm:text-lg font-black text-slate-900 mt-1">
+                    Link đăng ký, Mã QR & Thiết kế Thư mời VIP
+                  </h2>
+                  <p class="text-xs text-slate-500">
+                    Chia sẻ link mời sự kiện, tải mã QR để in ấn backdrop/standee hoặc tạo thiệp mời online trang trọng gửi khách VIP.
+                  </p>
+                </div>
+
+                <div class="flex flex-wrap items-center gap-2 shrink-0">
+                  <button
+                    type="button"
+                    @click="openAdminInviteCard()"
+                    class="px-3.5 py-2 rounded-xl bg-gradient-to-r from-amber-500 via-orange-500 to-amber-600 hover:from-amber-600 hover:to-orange-600 text-white font-bold text-xs shadow-xs flex items-center gap-1.5 transition cursor-pointer"
+                  >
+                    <Sparkles :size="15" />
+                    <span>Thiết kế Thư mời / Thiệp VIP</span>
+                  </button>
+                  <button
+                    type="button"
+                    @click="showTenantInviteModal = true"
+                    class="px-3 py-2 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold text-xs flex items-center gap-1 transition cursor-pointer"
+                  >
+                    <Plus :size="15" />
+                    <span>Tạo link mới</span>
+                  </button>
+                </div>
+              </div>
+
+              <div class="grid gap-4 md:grid-cols-2">
+                <!-- Cột 1: Link Mời & Chia sẻ -->
+                <div class="p-4 rounded-xl bg-slate-50 border border-slate-200/80 flex flex-col justify-between gap-3">
+                  <div>
+                    <span class="text-[11px] font-bold uppercase tracking-wider text-slate-500 block mb-1">
+                      Link mời tham gia sự kiện chính thức
+                    </span>
+                    <div class="flex items-center gap-2">
+                      <div class="flex-1 p-2.5 bg-white border border-slate-200 rounded-xl text-xs font-mono font-bold text-primary-700 truncate select-all">
+                        {{ tenantActiveInviteLink?.invite_url || 'Đang tạo link mời chính thức...' }}
+                      </div>
+                      <button
+                        type="button"
+                        @click="copyTenantInviteLink()"
+                        :disabled="!tenantActiveInviteLink?.invite_url"
+                        class="p-2.5 rounded-xl bg-white border border-slate-200 text-slate-700 hover:text-primary-700 hover:border-primary-300 transition cursor-pointer shrink-0"
+                        title="Sao chép link"
+                      >
+                        <Check v-if="copiedTenantInviteLink" :size="16" class="text-emerald-600" />
+                        <Copy v-else :size="16" />
+                      </button>
+                    </div>
+                  </div>
+
+                  <div class="flex flex-wrap items-center gap-2 pt-1">
+                    <button
+                      type="button"
+                      @click="copyTenantInviteLink()"
+                      :disabled="!tenantActiveInviteLink?.invite_url"
+                      class="btn btn-primary py-2 px-3 text-xs font-bold gap-1.5 flex-1 justify-center"
+                    >
+                      <Check v-if="copiedTenantInviteLink" :size="14" />
+                      <Copy v-else :size="14" />
+                      <span>{{ copiedTenantInviteLink ? 'Đã sao chép!' : 'Sao chép link mời' }}</span>
+                    </button>
+                    <button
+                      type="button"
+                      @click="shareTenantInviteLink()"
+                      :disabled="!tenantActiveInviteLink?.invite_url"
+                      class="btn btn-secondary py-2 px-3 text-xs font-bold gap-1.5 flex-1 justify-center text-primary-700 border-primary-200 hover:bg-primary-50"
+                    >
+                      <Share2 :size="14" />
+                      <span>Chia sẻ Zalo/SMS</span>
+                    </button>
+                    <button
+                      type="button"
+                      @click="openAdminInviteCard()"
+                      class="btn py-2 px-3 text-xs font-bold gap-1.5 bg-amber-50 text-amber-800 border border-amber-200 hover:bg-amber-100 justify-center"
+                    >
+                      <Sparkles :size="14" class="text-amber-600" />
+                      <span>Tạo thiệp VIP</span>
+                    </button>
+                  </div>
+                </div>
+
+                <!-- Cột 2: Mã QR Mời Trực Tiếp -->
+                <div class="p-4 rounded-xl bg-slate-50 border border-slate-200/80 flex flex-col sm:flex-row items-center gap-4">
+                  <div
+                    @click="showTenantZoomQrModal = true"
+                    class="p-2 bg-white rounded-xl border border-slate-200 shadow-xs cursor-pointer hover:border-primary-400 transition group relative shrink-0"
+                    title="Chạm để phóng to mã QR"
+                  >
+                    <img
+                      v-if="tenantInviteQrUrl"
+                      :src="tenantInviteQrUrl"
+                      alt="Mã QR Mời"
+                      class="w-28 h-28 object-contain"
+                    />
+                    <div v-else class="w-28 h-28 flex items-center justify-center text-slate-400 text-[10px]">
+                      Đang tạo QR...
+                    </div>
+                    <div class="absolute inset-0 bg-primary-900/60 rounded-xl opacity-0 group-hover:opacity-100 transition flex flex-col items-center justify-center text-white text-[10px] font-bold gap-1 pointer-events-none">
+                      <Maximize2 :size="16" />
+                      <span>Phóng to</span>
+                    </div>
+                  </div>
+
+                  <div class="space-y-2 text-center sm:text-left flex-1">
+                    <b class="text-xs font-bold text-slate-800 block">Mã QR Mời Đăng Ký Trực Tiếp</b>
+                    <p class="text-[11px] text-slate-500">Khách quét bằng Camera hoặc Zalo để vào ngay trang đăng ký.</p>
+                    <div class="flex flex-wrap items-center justify-center sm:justify-start gap-2 pt-1">
+                      <button
+                        type="button"
+                        @click="showTenantZoomQrModal = true"
+                        class="px-2.5 py-1.5 rounded-lg bg-white border border-slate-200 hover:bg-slate-100 text-slate-700 text-[11px] font-bold flex items-center gap-1 cursor-pointer"
+                      >
+                        <Maximize2 :size="12" /> Phóng to QR
+                      </button>
+                      <a
+                        v-if="tenantInviteQrUrl"
+                        :href="tenantInviteQrUrl"
+                        :download="`QR-${selectedEvent.name}.png`"
+                        class="px-2.5 py-1.5 rounded-lg bg-primary-50 border border-primary-200 text-primary-700 hover:bg-primary-100 text-[11px] font-bold flex items-center gap-1 cursor-pointer"
+                      >
+                        <Download :size="12" /> Tải ảnh QR
+                      </a>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              <!-- Danh sách các link mời đã tạo (nếu có nhiều hơn 1) -->
+              <div v-if="tenantEventInvites.length > 1" class="pt-2 border-t border-slate-100">
+                <span class="text-xs font-bold text-slate-700 block mb-2">Các link mời khác của sự kiện:</span>
+                <div class="divide-y divide-slate-100 border border-slate-100 rounded-xl overflow-hidden bg-white">
+                  <div v-for="link in tenantEventInvites" :key="link.id" class="p-2.5 flex items-center justify-between text-xs gap-3 hover:bg-slate-50">
+                    <div class="min-w-0">
+                      <span class="font-bold text-slate-800">{{ link.referrer_name }}</span>
+                      <span class="text-slate-400 text-[11px] ml-1.5 font-mono">{{ link.token }}</span>
+                    </div>
+                    <div class="flex items-center gap-3 shrink-0">
+                      <span class="text-[11px] text-slate-500 font-semibold">{{ link.total_registered || 0 }} khách đã đăng ký</span>
+                      <button type="button" @click="copyTenantInviteLink(link.invite_url)" class="text-primary-600 font-bold hover:underline text-[11px] cursor-pointer">
+                        Sao chép link
+                      </button>
+                      <button type="button" @click="shareTenantInviteLink(link.invite_url)" class="text-slate-600 font-semibold hover:text-slate-900 text-[11px] cursor-pointer">
+                        Chia sẻ
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </section>
+
             <section class="surface-card attendee-card">
               <div class="surface-heading">
                 <div>
@@ -3344,17 +3653,28 @@ onBeforeUnmount(stopScanner);
                       <span v-else class="text-slate-400 text-[11px]">Chưa check-in</span>
                     </div>
 
-                    <div v-if="attendee.registration_status === 'PENDING' || attendee.registration_status === 'PENDING_ADMIN'" class="flex items-center justify-end gap-2 pt-1 border-t border-slate-200/60">
+                    <div class="flex items-center justify-end gap-1.5 pt-1 border-t border-slate-200/60">
                       <button
                         type="button"
-                        class="px-3 py-1 rounded-lg bg-rose-50 text-rose-600 border border-rose-200 font-bold text-xs"
+                        class="px-2.5 py-1 rounded-lg bg-amber-50 text-amber-800 border border-amber-200 font-bold text-xs flex items-center gap-1 cursor-pointer"
+                        title="Tạo thiệp VIP gửi khách này"
+                        @click="openAdminInviteCard(attendee)"
+                      >
+                        <Sparkles :size="12" class="text-amber-600" />
+                        <span>Thiệp VIP</span>
+                      </button>
+                      <button
+                        v-if="attendee.registration_status === 'PENDING' || attendee.registration_status === 'PENDING_ADMIN'"
+                        type="button"
+                        class="px-3 py-1 rounded-lg bg-rose-50 text-rose-600 border border-rose-200 font-bold text-xs cursor-pointer"
                         @click="rejectTenantAttendee(attendee)"
                       >
                         Từ chối
                       </button>
                       <button
+                        v-if="attendee.registration_status === 'PENDING' || attendee.registration_status === 'PENDING_ADMIN'"
                         type="button"
-                        class="px-3.5 py-1 rounded-lg bg-emerald-600 text-white font-bold text-xs"
+                        class="px-3.5 py-1 rounded-lg bg-emerald-600 text-white font-bold text-xs cursor-pointer"
                         @click="approveTenantAttendee(attendee.registration_id)"
                       >
                         Duyệt vé
@@ -3394,23 +3714,33 @@ onBeforeUnmount(stopScanner);
                         <span v-else class="muted">Chưa check-in</span>
                       </td>
                       <td>
-                        <div v-if="attendee.registration_status === 'PENDING' || attendee.registration_status === 'PENDING_ADMIN'" class="flex items-center gap-1.5">
+                        <div class="flex items-center gap-1.5">
                           <button
                             type="button"
-                            class="px-2.5 py-1 rounded-md bg-emerald-600 text-white font-bold text-[10px] hover:bg-emerald-700 cursor-pointer"
-                            @click="approveTenantAttendee(attendee.registration_id)"
+                            class="px-2 py-1 rounded-md bg-amber-50 text-amber-800 border border-amber-200 font-bold text-[10px] hover:bg-amber-100 flex items-center gap-1 cursor-pointer"
+                            title="Tạo thiệp VIP gửi khách này"
+                            @click="openAdminInviteCard(attendee)"
                           >
-                            Duyệt vé
+                            <Sparkles :size="11" class="text-amber-600" />
+                            <span>Thiệp VIP</span>
                           </button>
-                          <button
-                            type="button"
-                            class="px-2 py-1 rounded-md bg-rose-50 text-rose-600 border border-rose-200 font-bold text-[10px] hover:bg-rose-100 cursor-pointer"
-                            @click="rejectTenantAttendee(attendee)"
-                          >
-                            Từ chối
-                          </button>
+                          <template v-if="attendee.registration_status === 'PENDING' || attendee.registration_status === 'PENDING_ADMIN'">
+                            <button
+                              type="button"
+                              class="px-2.5 py-1 rounded-md bg-emerald-600 text-white font-bold text-[10px] hover:bg-emerald-700 cursor-pointer"
+                              @click="approveTenantAttendee(attendee.registration_id)"
+                            >
+                              Duyệt vé
+                            </button>
+                            <button
+                              type="button"
+                              class="px-2 py-1 rounded-md bg-rose-50 text-rose-600 border border-rose-200 font-bold text-[10px] hover:bg-rose-100 cursor-pointer"
+                              @click="rejectTenantAttendee(attendee)"
+                            >
+                              Từ chối
+                            </button>
+                          </template>
                         </div>
-                        <span v-else class="muted">—</span>
                       </td>
                     </tr>
                   </tbody>
@@ -3432,21 +3762,31 @@ onBeforeUnmount(stopScanner);
         type="button"
         @click="activePanel = 'overview'"
         class="flex flex-col items-center justify-center flex-1 py-1 gap-1 text-[10px] font-bold transition select-none cursor-pointer"
-        :class="activePanel === 'overview' ? 'text-primary-700' : 'text-slate-500 hover:text-slate-800'"
+        :class="activePanel === 'overview' ? 'text-primary-700 font-extrabold' : 'text-slate-500 hover:text-slate-800'"
       >
-        <CalendarDays :size="18" />
+        <CalendarDays :size="17" />
         <span>Tổng quan</span>
+      </button>
+
+      <button
+        type="button"
+        @click="activePanel = 'invites'"
+        class="flex flex-col items-center justify-center flex-1 py-1 gap-1 text-[10px] font-bold transition select-none cursor-pointer"
+        :class="activePanel === 'invites' ? 'text-amber-600 font-extrabold' : 'text-slate-500 hover:text-slate-800'"
+      >
+        <Sparkles :size="17" />
+        <span>Thư mời</span>
       </button>
 
       <button
         type="button"
         @click="activePanel = 'attendees'"
         class="flex flex-col items-center justify-center flex-1 py-1 gap-1 text-[10px] font-bold transition select-none cursor-pointer relative"
-        :class="activePanel === 'attendees' ? 'text-primary-700' : 'text-slate-500 hover:text-slate-800'"
+        :class="activePanel === 'attendees' ? 'text-primary-700 font-extrabold' : 'text-slate-500 hover:text-slate-800'"
       >
-        <Users :size="18" />
+        <Users :size="17" />
         <span>Khách mời</span>
-        <span v-if="attendees.length" class="absolute top-0.5 right-3 px-1 py-0.2 bg-primary-600 text-white rounded-full text-[9px] font-mono leading-none">
+        <span v-if="attendees.length" class="absolute top-0.5 right-2 px-1 py-0.2 bg-primary-600 text-white rounded-full text-[9px] font-mono leading-none">
           {{ attendees.length }}
         </span>
       </button>
@@ -3455,9 +3795,9 @@ onBeforeUnmount(stopScanner);
         type="button"
         @click="stopScanner(); activePanel = 'team'"
         class="flex flex-col items-center justify-center flex-1 py-1 gap-1 text-[10px] font-bold transition select-none cursor-pointer"
-        :class="activePanel === 'team' ? 'text-primary-700' : 'text-slate-500 hover:text-slate-800'"
+        :class="activePanel === 'team' ? 'text-primary-700 font-extrabold' : 'text-slate-500 hover:text-slate-800'"
       >
-        <ShieldCheck :size="18" />
+        <ShieldCheck :size="17" />
         <span>Đội ngũ</span>
       </button>
 
@@ -3467,21 +3807,8 @@ onBeforeUnmount(stopScanner);
         class="flex flex-col items-center justify-center flex-1 py-1 gap-1 text-[10px] font-bold transition select-none cursor-pointer"
         :class="activePanel === 'scanner' ? 'text-emerald-700 font-extrabold' : 'text-slate-500 hover:text-slate-800'"
       >
-        <Camera :size="18" />
+        <Camera :size="17" />
         <span>Soát vé</span>
-      </button>
-
-      <button
-        type="button"
-        @click="stopScanner(); loadDisputes(); activePanel = 'disputes'"
-        class="flex flex-col items-center justify-center flex-1 py-1 gap-1 text-[10px] font-bold transition select-none cursor-pointer relative"
-        :class="activePanel === 'disputes' ? 'text-amber-700' : 'text-slate-500 hover:text-slate-800'"
-      >
-        <Scale :size="18" />
-        <span>Tranh chấp</span>
-        <span v-if="disputesList.filter(d => d.decision === 'PENDING').length" class="absolute top-0.5 right-3 px-1 py-0.2 bg-amber-500 text-white rounded-full text-[9px] font-mono leading-none">
-          {{ disputesList.filter(d => d.decision === 'PENDING').length }}
-        </span>
       </button>
     </nav>
 
@@ -4320,6 +4647,134 @@ onBeforeUnmount(stopScanner);
           <span>Chia sẻ Zalo/SMS</span>
         </button>
       </div>
+    </div>
+  </div>
+
+  <!-- MODAL: THIẾT KẾ & TẠO THƯ MỜI / THIỆP VIP ONLINE CHO ADMIN / BAN TỔ CHỨC -->
+  <InviteCardModal
+    :show="showAdminInviteCardModal"
+    :cardData="adminCardData"
+    @close="showAdminInviteCardModal = false"
+  />
+
+  <!-- MODAL: PHÓNG TO MÃ QR CỦA BAN TỔ CHỨC (ADMIN) -->
+  <div v-if="showTenantZoomQrModal" class="modal-scrim" @click.self="showTenantZoomQrModal = false">
+    <div class="modal-card max-w-sm w-full mx-4 text-center p-6 bg-white rounded-3xl shadow-2xl relative">
+      <button
+        type="button"
+        class="absolute top-4 right-4 p-2 text-slate-400 hover:text-slate-700 bg-slate-100 hover:bg-slate-200 rounded-full transition cursor-pointer"
+        @click="showTenantZoomQrModal = false"
+      >
+        <X :size="18" />
+      </button>
+
+      <div class="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-primary-50 text-primary-700 text-xs font-bold mb-2">
+        <Sparkles :size="13" />
+        <span>Mã QR Sự Kiện Chính Thức</span>
+      </div>
+
+      <h3 class="text-base font-bold text-slate-900 mb-0.5">
+        {{ selectedEvent?.name || 'Sự kiện' }}
+      </h3>
+      <p class="text-[11px] text-slate-500 mb-4">
+        Khách dùng Camera điện thoại hoặc Zalo để quét mã và đăng ký tham dự
+      </p>
+
+      <div class="bg-white p-3 rounded-2xl border-2 border-dashed border-primary-200 inline-block shadow-xs mb-4">
+        <img
+          v-if="tenantInviteQrUrl"
+          :src="tenantInviteQrUrl"
+          alt="QR Code Zoom"
+          class="w-60 h-60 sm:w-64 sm:h-64 object-contain mx-auto"
+        />
+        <div v-else class="w-60 h-60 flex items-center justify-center text-slate-400 text-xs">
+          Đang tạo mã QR...
+        </div>
+      </div>
+
+      <div class="flex flex-col sm:flex-row gap-2">
+        <a
+          v-if="tenantInviteQrUrl"
+          :href="tenantInviteQrUrl"
+          :download="`QR-${selectedEvent?.name || 'sukien'}.png`"
+          class="btn btn-secondary flex-1 py-2.5 text-xs font-bold justify-center gap-1.5 cursor-pointer"
+        >
+          <Download :size="14" />
+          <span>Tải ảnh QR về máy</span>
+        </a>
+        <button
+          type="button"
+          @click="shareTenantInviteLink()"
+          class="btn btn-primary flex-1 py-2.5 text-xs font-bold justify-center gap-1.5 cursor-pointer"
+        >
+          <Share2 :size="14" />
+          <span>Chia sẻ Zalo/SMS</span>
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- MODAL: TẠO THÊM LINK MỜI SỰ KIỆN CHO BAN TỔ CHỨC -->
+  <div v-if="showTenantInviteModal" class="modal-scrim" @click.self="showTenantInviteModal = false">
+    <div class="modal-card max-w-md w-full mx-4 p-6 bg-white rounded-3xl shadow-2xl relative">
+      <button
+        type="button"
+        class="absolute top-4 right-4 p-2 text-slate-400 hover:text-slate-700 bg-slate-100 hover:bg-slate-200 rounded-full transition cursor-pointer"
+        @click="showTenantInviteModal = false"
+      >
+        <X :size="18" />
+      </button>
+
+      <span class="text-[11px] font-bold uppercase tracking-wider text-primary-700 block mb-1">KÊNH MỜI KHÁCH</span>
+      <h2 class="text-lg font-bold text-slate-900 mb-1">Tạo link mời & mã QR mới</h2>
+      <p class="text-xs text-slate-500 mb-4">
+        Tạo thêm đường link riêng cho chiến dịch truyền thông (Facebook, Zalo, Đối tác...)
+      </p>
+
+      <form @submit.prevent="handleCreateTenantInvite" class="space-y-4">
+        <div>
+          <label class="block text-xs font-bold text-slate-700 mb-1">Số lượng khách đăng ký tối đa qua link này</label>
+          <input
+            v-model.number="newInviteForm.max_registrations"
+            type="number"
+            min="1"
+            max="10000"
+            required
+            class="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-800 focus:bg-white focus:outline-none focus:ring-2 focus:ring-primary-500"
+          />
+          <small class="text-[11px] text-slate-400">Ví dụ: 100, 500 hoặc 1000 khách</small>
+        </div>
+
+        <div>
+          <label class="block text-xs font-bold text-slate-700 mb-1">Thời hạn hiệu lực của link (số ngày)</label>
+          <input
+            v-model.number="newInviteForm.expires_in_days"
+            type="number"
+            min="1"
+            max="365"
+            required
+            class="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-800 focus:bg-white focus:outline-none focus:ring-2 focus:ring-primary-500"
+          />
+          <small class="text-[11px] text-slate-400">Mặc định: 60 ngày</small>
+        </div>
+
+        <div class="flex items-center justify-end gap-2 pt-2 border-t border-slate-100">
+          <button
+            type="button"
+            @click="showTenantInviteModal = false"
+            class="px-4 py-2 rounded-xl text-xs font-bold text-slate-600 bg-slate-100 hover:bg-slate-200 cursor-pointer"
+          >
+            Hủy
+          </button>
+          <button
+            type="submit"
+            :disabled="creatingInvite"
+            class="btn btn-primary px-4 py-2 text-xs font-bold cursor-pointer"
+          >
+            {{ creatingInvite ? 'Đang tạo...' : 'Tạo link ngay' }}
+          </button>
+        </div>
+      </form>
     </div>
   </div>
 </template>

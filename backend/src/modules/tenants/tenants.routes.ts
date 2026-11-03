@@ -27,5 +27,7 @@ router.post('/portal/team', authenticate, requireTenantAdmin, TenantsController.
 router.get('/portal/events/:eventId/team', authenticate, requireTenantAdmin, TenantsController.eventTeam);
 router.put('/portal/events/:eventId/team/:staffId', authenticate, requireTenantAdmin, TenantsController.assignTeamMember);
 router.delete('/portal/events/:eventId/team/:staffId', authenticate, requireTenantAdmin, TenantsController.removeTeamMember);
+router.get('/portal/events/:eventId/invites', authenticate, requireTenantAdmin, TenantsController.eventInvites);
+router.post('/portal/events/:eventId/invites', authenticate, requireTenantAdmin, TenantsController.createEventInvite);
 
 export default router;

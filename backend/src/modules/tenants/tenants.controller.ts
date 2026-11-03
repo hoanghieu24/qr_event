@@ -250,4 +250,27 @@ export class TenantsController {
       res.status(400).json({ success: false, message: error.message });
     }
   }
+
+  static async eventInvites(req: Request, res: Response) {
+    try {
+      const invites = await TenantsService.listEventInvites(Number(req.user!.tenantId), Number(req.params.eventId));
+      res.json({ success: true, data: invites });
+    } catch (error: any) {
+      res.status(400).json({ success: false, message: error.message });
+    }
+  }
+
+  static async createEventInvite(req: Request, res: Response) {
+    try {
+      const invite = await TenantsService.createEventInvite(
+        Number(req.user!.tenantId),
+        Number(req.params.eventId),
+        req.body,
+        req.user!.id
+      );
+      res.status(201).json({ success: true, data: invite });
+    } catch (error: any) {
+      res.status(400).json({ success: false, message: error.message });
+    }
+  }
 }
