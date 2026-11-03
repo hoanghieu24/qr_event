@@ -132,7 +132,8 @@ const handleSendOtp = async () => {
   try {
     const res = await auth.sendOtp(customerEmail.value);
     otpSent.value = true;
-    customerMessage.value = res.data?.data?.message || `Đã gửi mã xác thực 6 số tới ${customerEmail.value}`;
+    otpCode.value = '123456'; // Tự động điền sẵn mã 123456 để test nhanh
+    customerMessage.value = res.data?.data?.message || 'Mã xác thực OTP kiểm thử là: 123456';
   } catch (err: any) {
     customerError.value = err.response?.data?.message || err.message || 'Không thể gửi mã xác thực.';
   } finally {
@@ -291,7 +292,7 @@ const onOtpInput = (e: Event) => {
             <!-- BƯỚC 2: NHẬP OTP -->
             <form v-else @submit.prevent="handleVerifyOtp" class="space-y-4">
               <div>
-                <label class="field-label" for="otp">Mã xác thực 6 số (gửi qua email)</label>
+                <label class="field-label" for="otp">Mã xác thực 6 số (Mặc định test: 123456)</label>
                 <input
                   id="otp"
                   :value="otpCode"
@@ -300,7 +301,7 @@ const onOtpInput = (e: Event) => {
                   inputmode="numeric"
                   maxlength="6"
                   required
-                  placeholder="------"
+                  placeholder="123456"
                   class="field text-center font-mono text-2xl tracking-widest"
                   autofocus
                 />

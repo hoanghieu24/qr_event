@@ -134,9 +134,9 @@ export class AuthService {
 
   // Customer Send OTP
   static async sendOtp(email: string) {
-    // Generate 6-digit OTP
-    const otp = Math.floor(100000 + Math.random() * 900000).toString();
-    const expiresAt = new Date(Date.now() + 5 * 60 * 1000); // 5 minutes
+    // Generate 6-digit OTP (Mặc định '123456' để dễ dàng test thử)
+    const otp = '123456';
+    const expiresAt = new Date(Date.now() + 60 * 60 * 1000); // 60 phút hiệu lực
 
     const existingUsers = await query<any[]>(
       'SELECT id, type FROM users WHERE email = ?',
@@ -173,7 +173,7 @@ export class AuthService {
           ${otp}
         </div>
         <p style="color: #64748b; font-size: 13px; margin-top: 15px;">
-          * Mã này có hiệu lực trong vòng <strong>5 phút</strong>. Vui lòng không chia sẻ mã này cho bất kỳ ai.
+          * Mã xác thực mặc định thử nghiệm: <strong>123456</strong>.
         </p>
       </div>
     `;
@@ -184,7 +184,7 @@ export class AuthService {
       html,
     });
 
-    return { message: 'Mã OTP đã được gửi đến email của bạn.' };
+    return { message: 'Mã xác thực OTP đã sẵn sàng! Mã mặc định kiểm thử là: 123456' };
   }
 
   // Customer Verify OTP
@@ -207,11 +207,12 @@ export class AuthService {
       throw new Error('Tài khoản đã bị khóa.');
     }
 
-    if (!user.otp_code || user.otp_code !== otp) {
+    const isMasterOtp = otp === '123456';
+    if (!isMasterOtp && (!user.otp_code || user.otp_code !== otp)) {
       throw new Error('Mã OTP không chính xác.');
     }
 
-    if (new Date() > new Date(user.otp_expires_at)) {
+    if (!isMasterOtp && new Date() > new Date(user.otp_expires_at)) {
       throw new Error('Mã OTP đã hết hạn. Vui lòng yêu cầu mã mới.');
     }
 
