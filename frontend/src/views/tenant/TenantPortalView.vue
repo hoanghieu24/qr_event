@@ -677,6 +677,8 @@ const logout = () => {
   staffEvents.value = [];
   staffInviteLink.value = null;
   staffRegistrations.value = [];
+  authStore.logout();
+  router.push('/khach');
 };
 
 const loadStaffPortal = async () => {
@@ -1634,10 +1636,9 @@ onMounted(async () => {
     } else {
       await loadPortal();
     }
-  } else if (token.value && user.value?.type !== 'TENANT_ADMIN' && user.value?.type !== 'STAFF') {
-    // If logged in as platform admin or customer, do not auto-force tenant view with wrong account
-    token.value = '';
-    user.value = null;
+  } else {
+    // Nếu chưa đăng nhập hoặc không phải ban tổ chức -> chuyển về trang khách
+    router.replace('/khach');
   }
 });
 
@@ -1645,121 +1646,11 @@ onBeforeUnmount(stopScanner);
 </script>
 
 <template>
-  <div v-if="!token || (user?.type !== 'TENANT_ADMIN' && user?.type !== 'STAFF')" class="login-shell">
-    <section class="login-brand">
-      <div class="brand-lockup">
-        <span class="brand-icon"><QrCode :size="22" /></span><span>KTS<span>QR</span></span>
-      </div>
-      <div class="brand-copy">
-        <span class="eyebrow-light">CỔNG ĐIỀU HÀNH SỰ KIỆN KHÁCH THUÊ</span>
-        <h1>Sự kiện của bạn,<br /><em>vận hành mạch lạc.</em></h1>
-        <div class="brand-points">
-          <span><Activity :size="17" />Số liệu check-in cập nhật trực tiếp</span>
-        </div>
-      </div>
-      <div v-if="!isAdminMode && !isTenantMode" class="brand-foot">
-        <router-link to="/login" class="inline-flex items-center gap-1.5 text-white/80 hover:text-white">
-          <ArrowLeft :size="14" /> Về trang đăng nhập chính
-        </router-link>
-      </div>
-    </section>
-
-    <section class="login-panel">
-      <form v-if="isTenantRegister" class="login-card" @submit.prevent="registerTenantAccount">
-        <div class="flex items-center justify-between mb-2">
-          <span class="eyebrow">MỞ SỰ KIỆN MỚI</span>
-          <router-link v-if="!isAdminMode && !isTenantMode" to="/login" class="text-xs font-semibold text-primary-600 hover:text-primary-800 flex items-center gap-1">
-            <ArrowLeft :size="13" /> Cổng chính
-          </router-link>
-        </div>
-        <h2>Đăng ký mở sự kiện</h2>
-        <p class="muted">Tạo tài khoản ban tổ chức, được tặng 3 sự kiện dùng thử miễn phí.</p>
-        <div v-if="errorMessage" class="error-box">{{ errorMessage }}</div>
-
-        <label class="control-label">Tên đơn vị / Tên sự kiện *</label>
-        <div class="input-icon">
-          <Building2 :size="18" />
-          <input v-model="tenantRegForm.name" required placeholder="VD: Công ty Sự kiện ABC" />
-        </div>
-
-        <label class="control-label">Họ tên người đại diện *</label>
-        <div class="input-icon">
-          <CircleUserRound :size="18" />
-          <input v-model="tenantRegForm.contact_name" required placeholder="Nguyễn Văn A" />
-        </div>
-
-        <label class="control-label">Email quản lý *</label>
-        <div class="input-icon">
-          <Mail :size="18" />
-          <input v-model="tenantRegForm.email" type="email" required placeholder="ban-to-chuc@email.com" />
-        </div>
-
-        <label class="control-label">Số điện thoại</label>
-        <div class="input-icon">
-          <Tag :size="18" />
-          <input v-model="tenantRegForm.phone" placeholder="0912..." />
-        </div>
-
-        <label class="control-label">Mật khẩu (tối thiểu 8 ký tự) *</label>
-        <div class="input-icon">
-          <KeyRound :size="18" />
-          <input v-model="tenantRegForm.password" type="password" minlength="8" required placeholder="Nhập mật khẩu" />
-        </div>
-
-        <button class="primary-button full-button" :disabled="tenantRegBusy">
-          {{ tenantRegBusy ? 'Đang khởi tạo...' : 'Đăng ký & Bắt đầu sự kiện' }}
-          <ArrowRight :size="17" />
-        </button>
-
-        <div class="mt-4 pt-3 border-t border-slate-100 flex items-center justify-between text-xs text-slate-500">
-          <button type="button" @click="isTenantRegister = false" class="font-semibold text-primary-600 hover:underline">
-            ← Đã có tài khoản? Đăng nhập ngay
-          </button>
-          <span>KTSQR Event</span>
-        </div>
-      </form>
-
-      <!-- FORM ĐĂNG NHẬP KHÁCH THUÊ -->
-      <form v-else class="login-card" @submit.prevent="login">
-        <div class="flex items-center justify-between mb-2">
-          <span class="eyebrow">CỔNG RIÊNG BAN TỔ CHỨC & SOÁT VÉ</span>
-          <router-link v-if="!isAdminMode && !isTenantMode" to="/login" class="text-xs font-semibold text-primary-600 hover:text-primary-800 flex items-center gap-1">
-            <ArrowLeft :size="13" /> Cổng chính
-          </router-link>
-        </div>
-        <h2>Đăng nhập tài khoản</h2>
-        <p class="muted">Nhập tài khoản ban tổ chức hoặc nhân viên soát vé.</p>
-        
-        <label class="control-label">Email quản lý / nhân viên</label>
-        <div class="input-icon">
-          <input v-model="email" type="email" autocomplete="username" required placeholder="ban-to-chuc@congty.vn" />
-        </div>
-        
-        <label class="control-label">Mật khẩu</label>
-        <div class="input-icon">
-          <KeyRound :size="18" />
-          <input v-model="password" type="password" autocomplete="current-password" required placeholder="Nhập mật khẩu" />
-        </div>
-        
-        <button class="primary-button full-button" :disabled="loginBusy">
-          {{ loginBusy ? 'Đang đăng nhập...' : 'Vào không gian sự kiện' }}
-          <ArrowRight :size="17" />
-        </button>
-
-        <div class="mt-3 text-center">
-          <button type="button" @click="isTenantRegister = true" class="text-xs font-bold text-primary-700 hover:underline">
-            Chưa có tài khoản đơn vị? 👉 Đăng ký mở sự kiện ngay
-          </button>
-        </div>
-        
-        <div v-if="!isAdminMode && !isTenantMode" class="mt-4 pt-3 border-t border-slate-100 flex items-center justify-between text-xs text-slate-500">
-          <router-link to="/login?tab=check" class="font-semibold text-primary-600 hover:underline">
-            🎟️ Khách tham gia? Kiểm tra vé của tôi →
-          </router-link>
-          <span>KTSQR Event</span>
-        </div>
-      </form>
-    </section>
+  <div v-if="!token || (user?.type !== 'TENANT_ADMIN' && user?.type !== 'STAFF')" class="min-h-[100dvh] flex items-center justify-center bg-slate-50">
+    <div class="flex flex-col items-center gap-3 text-slate-500">
+      <Loader2 class="h-8 w-8 animate-spin text-primary-600" />
+      <span class="text-sm font-semibold">Đang chuyển về trang của khách...</span>
+    </div>
   </div>
 
   <div v-else-if="user?.type === 'STAFF'" class="min-h-screen bg-slate-50 text-slate-800 font-sans pb-16">
