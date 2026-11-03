@@ -5,11 +5,35 @@ import { ENV } from '../../config/env';
 
 export class InvitesService {
   // Generate HMAC Signature for invite token
-  private static generateSignature(eventId: number, referrerId: number, token: string): string {
+  static generateSignature(eventId: number, referrerId: number, token: string): string {
     return crypto
       .createHmac('sha256', ENV.INVITE_HMAC_SECRET)
       .update(`${eventId}:${referrerId}:${token}`)
       .digest('hex');
+  }
+
+  // Tạo mã link mời ngắn gọn (8 ký tự ngẫu nhiên, dễ đọc, không gây nhầm lẫn)
+  static async generateUniqueShortToken(): Promise<string> {
+    const chars = '23456789abcdefghjkmnpqrstuvwxyz';
+    let token = '';
+    let isUnique = false;
+    let attempts = 0;
+
+    while (!isUnique && attempts < 10) {
+      attempts++;
+      token = '';
+      const bytes = crypto.randomBytes(8);
+      for (let i = 0; i < 8; i++) {
+        token += chars[bytes[i] % chars.length];
+      }
+
+      const existing = await query<any[]>('SELECT id FROM invite_links WHERE token = ?', [token]);
+      if (existing.length === 0) {
+        isUnique = true;
+      }
+    }
+
+    return token;
   }
 
   static async getStaffQuotaForEvent(eventId: number, staffId: number) {
@@ -40,8 +64,8 @@ export class InvitesService {
     max_registrations?: number;
     is_admin?: boolean;
   }) {
-    // Generate secure random token
-    const token = `inv_${uuidv4().replace(/-/g, '')}`;
+    // Generate secure short token (8 ký tự ngẫu nhiên, gọn đẹp, dễ chia sẻ)
+    const token = await this.generateUniqueShortToken();
     const signature = this.generateSignature(data.event_id, data.referrer_id, token);
 
     const days = data.expires_in_days || 30;
@@ -92,8 +116,8 @@ export class InvitesService {
        FROM invite_links il
        JOIN events e ON il.event_id = e.id
        JOIN users u ON il.referrer_id = u.id
-       WHERE il.token = ?`,
-      [token]
+       WHERE il.token = ? OR il.legacy_token = ?`,
+      [token, token]
     );
 
     if (rows.length === 0) {
@@ -102,9 +126,11 @@ export class InvitesService {
 
     const invite = rows[0];
 
-    // Verify HMAC signature
-    const expectedSig = this.generateSignature(invite.event_id, invite.referrer_id, invite.token);
-    if (invite.signature !== expectedSig) {
+    // Verify HMAC signature (hỗ trợ cả token mới ngắn gọn và token cũ nếu có khách bấm link cũ)
+    const currentSig = this.generateSignature(invite.event_id, invite.referrer_id, invite.token);
+    const legacySig = invite.legacy_token ? this.generateSignature(invite.event_id, invite.referrer_id, invite.legacy_token) : '';
+
+    if (invite.signature !== currentSig && invite.signature !== legacySig) {
       throw new Error('Chữ ký bảo mật của link mời không hợp lệ.');
     }
 
@@ -135,6 +161,25 @@ export class InvitesService {
       WHERE il.referrer_id = ?
       ORDER BY il.id DESC
     `, [referrerId]);
+
+    // Tự động rút ngắn các link cũ đang bị dài quá 12 ký tự hoặc có tiền tố inv_
+    for (const r of rows) {
+      if (r.token && (r.token.length > 12 || r.token.startsWith('inv_')) && r.status === 'ACTIVE') {
+        try {
+          const shortToken = await this.generateUniqueShortToken();
+          const newSig = this.generateSignature(r.event_id, r.referrer_id, shortToken);
+          await query(
+            'UPDATE invite_links SET legacy_token = token, token = ?, signature = ? WHERE id = ?',
+            [shortToken, newSig, r.id]
+          );
+          r.legacy_token = r.token;
+          r.token = shortToken;
+          r.signature = newSig;
+        } catch (shortErr) {
+          console.warn('Auto-shorten link error:', shortErr);
+        }
+      }
+    }
 
     return rows.map((r) => ({
       ...r,

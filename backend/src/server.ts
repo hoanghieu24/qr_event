@@ -5,6 +5,7 @@ import app from './app';
 import { ENV } from './config/env';
 import { pool } from './config/database';
 import { initSocketServer } from './realtime/socket';
+import { InvitesService } from './modules/invites/invites.service';
 
 async function autoInitDatabaseIfEmpty() {
   let connection: any = null;
@@ -72,10 +73,36 @@ async function bootstrap() {
             max_employees = GREATEST(max_employees, 20)
         WHERE is_trial = 1 OR max_scanners < 10
       `);
+
+      // Tự động đảm bảo cột legacy_token và rút ngắn toàn bộ link mời cũ
+      try {
+        await conn.query(`ALTER TABLE invite_links ADD COLUMN legacy_token VARCHAR(255) NULL AFTER token`);
+      } catch (colErr: any) {
+        // Cột đã tồn tại
+      }
+
+      const [longLinks]: any = await conn.query(`
+        SELECT id, event_id, referrer_id, token 
+        FROM invite_links 
+        WHERE (LENGTH(token) > 12 OR token LIKE 'inv_%') AND status = 'ACTIVE'
+      `);
+
+      if (Array.isArray(longLinks) && longLinks.length > 0) {
+        for (const l of longLinks) {
+          const shortToken = await InvitesService.generateUniqueShortToken();
+          const newSig = InvitesService.generateSignature(l.event_id, l.referrer_id, shortToken);
+          await conn.query(
+            `UPDATE invite_links SET legacy_token = token, token = ?, signature = ? WHERE id = ?`,
+            [shortToken, newSig, l.id]
+          );
+        }
+        console.log(`✅ Đã tự động rút gọn ${longLinks.length} link mời cũ sang dạng ngắn (8 ký tự).`);
+      }
+
       conn.release();
       console.log('✅ Đã cập nhật hạn mức nhân sự/soát vé tối thiểu 10 cho các sự kiện.');
     } catch (e: any) {
-      console.warn('⚠️ Cập nhật hạn mức thất bại:', e.message);
+      console.warn('⚠️ Cập nhật hạn mức hoặc rút ngắn link thất bại:', e.message);
     }
 
     const httpServer = http.createServer(app);
