@@ -26,8 +26,11 @@ import {
   CloudUpload,
   MapPin,
   Compass,
-  Check
+  Check,
+  Volume2,
+  VolumeX
 } from 'lucide-vue-next';
+import { playScanSound, unlockAudio, isSoundEnabled } from '../../utils/scannerSound';
 
 const events = ref<any[]>([]);
 const selectedEventId = ref<number | null>(null);
@@ -137,41 +140,9 @@ const initGeolocation = () => {
   }
 };
 
-// Sound synthesizer using Web Audio API
+// Sound synthesizer using Web Audio API + fallback
 const playSound = (type: 'SUCCESS' | 'ALREADY_USED' | 'INVALID') => {
-  try {
-    const audioCtx = new (window.AudioContext || (window as any).webkitAudioContext)();
-    const osc = audioCtx.createOscillator();
-    const gain = audioCtx.createGain();
-    osc.connect(gain);
-    gain.connect(audioCtx.destination);
-
-    if (type === 'SUCCESS') {
-      osc.type = 'sine';
-      osc.frequency.setValueAtTime(880, audioCtx.currentTime);
-      osc.frequency.exponentialRampToValueAtTime(1320, audioCtx.currentTime + 0.15);
-      gain.gain.setValueAtTime(0.3, audioCtx.currentTime);
-      gain.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + 0.35);
-      osc.start();
-      osc.stop(audioCtx.currentTime + 0.35);
-    } else if (type === 'ALREADY_USED') {
-      osc.type = 'triangle';
-      osc.frequency.setValueAtTime(440, audioCtx.currentTime);
-      gain.gain.setValueAtTime(0.4, audioCtx.currentTime);
-      gain.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + 0.25);
-      osc.start();
-      osc.stop(audioCtx.currentTime + 0.25);
-    } else {
-      osc.type = 'sawtooth';
-      osc.frequency.setValueAtTime(220, audioCtx.currentTime);
-      gain.gain.setValueAtTime(0.3, audioCtx.currentTime);
-      gain.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + 0.3);
-      osc.start();
-      osc.stop(audioCtx.currentTime + 0.3);
-    }
-  } catch (e) {
-    // Audio context may require interaction
-  }
+  playScanSound(type);
 };
 
 // Haptic feedback
@@ -274,6 +245,7 @@ const onEventChange = async () => {
 };
 
 const startCamera = async () => {
+  unlockAudio();
   if (!html5QrCode) {
     html5QrCode = new Html5Qrcode('camera-stream');
   }

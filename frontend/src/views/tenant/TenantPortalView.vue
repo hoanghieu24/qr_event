@@ -49,9 +49,12 @@ import {
   Share2,
   Maximize2,
   Play,
-  Download
+  Download,
+  Volume2,
+  VolumeX
 } from 'lucide-vue-next';
 import QRCode from 'qrcode';
+import { playScanSound, unlockAudio, isSoundEnabled } from '../../utils/scannerSound';
 
 import './portal-features.css';
 import './tenant-style.css';
@@ -1143,43 +1146,20 @@ const stopScanner = () => {
   scannerRunning.value = false;
 };
 
-const playScanTone = (type: 'SUCCESS' | 'ALREADY_USED' | 'INVALID') => {
-  try {
-    const audioCtx = new (window.AudioContext || (window as any).webkitAudioContext)();
-    const osc = audioCtx.createOscillator();
-    const gain = audioCtx.createGain();
-    osc.connect(gain);
-    gain.connect(audioCtx.destination);
-    if (type === 'SUCCESS') {
-      osc.type = 'sine';
-      osc.frequency.setValueAtTime(880, audioCtx.currentTime);
-      osc.frequency.exponentialRampToValueAtTime(1320, audioCtx.currentTime + 0.15);
-      gain.gain.setValueAtTime(0.3, audioCtx.currentTime);
-      gain.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + 0.35);
-      osc.start();
-      osc.stop(audioCtx.currentTime + 0.35);
-    } else if (type === 'ALREADY_USED') {
-      osc.type = 'triangle';
-      osc.frequency.setValueAtTime(440, audioCtx.currentTime);
-      gain.gain.setValueAtTime(0.4, audioCtx.currentTime);
-      gain.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + 0.25);
-      osc.start();
-      osc.stop(audioCtx.currentTime + 0.25);
-    } else {
-      osc.type = 'sawtooth';
-      osc.frequency.setValueAtTime(220, audioCtx.currentTime);
-      gain.gain.setValueAtTime(0.3, audioCtx.currentTime);
-      gain.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + 0.3);
-      osc.start();
-      osc.stop(audioCtx.currentTime + 0.3);
-    }
-  } catch {}
-  if (navigator.vibrate) {
-    navigator.vibrate(type === 'SUCCESS' ? [100] : type === 'ALREADY_USED' ? [150, 80, 150] : [300]);
+const toggleSound = () => {
+  isSoundEnabled.value = !isSoundEnabled.value;
+  if (isSoundEnabled.value) {
+    unlockAudio();
+    playScanSound('SUCCESS');
   }
 };
 
+const playScanTone = (type: 'SUCCESS' | 'ALREADY_USED' | 'INVALID') => {
+  playScanSound(type);
+};
+
 const startScanner = async () => {
+  unlockAudio();
   if (scannerRunning.value || !selectedScannerEventId.value) return;
   scannerError.value = '';
   scannerResult.value = null;
@@ -2784,6 +2764,21 @@ onBeforeUnmount(stopScanner);
             </button>
           </div>
 
+          <div class="flex items-center justify-between gap-2 pt-1 text-xs">
+            <button
+              type="button"
+              @click="toggleSound"
+              class="sound-badge-btn"
+              :class="isSoundEnabled ? 'active' : 'muted'"
+              title="Bật/Tắt âm thanh quét vé"
+            >
+              <Volume2 v-if="isSoundEnabled" :size="15" />
+              <VolumeX v-else :size="15" />
+              <span>{{ isSoundEnabled ? 'Âm thanh: Đang bật' : 'Âm thanh: Đang tắt' }}</span>
+            </button>
+            <span class="text-[11px] text-slate-400 font-medium">Bíp & rung khi check-in</span>
+          </div>
+
           <button v-if="scannerRunning" class="secondary-button stop-camera" @click="stopScanner">
             Tắt camera
           </button>
@@ -3308,7 +3303,22 @@ onBeforeUnmount(stopScanner);
                 </button>
               </div>
 
-              <button v-if="scannerRunning" class="secondary-button stop-camera" @click="stopScanner">
+              <div class="flex items-center justify-between gap-2 pt-1 text-xs">
+            <button
+              type="button"
+              @click="toggleSound"
+              class="sound-badge-btn"
+              :class="isSoundEnabled ? 'active' : 'muted'"
+              title="Bật/Tắt âm thanh quét vé"
+            >
+              <Volume2 v-if="isSoundEnabled" :size="15" />
+              <VolumeX v-else :size="15" />
+              <span>{{ isSoundEnabled ? 'Âm thanh: Đang bật' : 'Âm thanh: Đang tắt' }}</span>
+            </button>
+            <span class="text-[11px] text-slate-400 font-medium">Bíp & rung khi check-in</span>
+          </div>
+
+          <button v-if="scannerRunning" class="secondary-button stop-camera" @click="stopScanner">
                 Tắt camera
               </button>
             </section>
@@ -5350,5 +5360,33 @@ onBeforeUnmount(stopScanner);
 .capacity-ring small {
   display: block;
   white-space: nowrap;
+}
+.sound-badge-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 12px;
+  border-radius: 10px;
+  font-size: 11px;
+  font-weight: 700;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  user-select: none;
+}
+.sound-badge-btn.active {
+  background: #ecfdf5;
+  color: #059669;
+  border: 1px solid #a7f3d0;
+}
+.sound-badge-btn.active:hover {
+  background: #d1fae5;
+}
+.sound-badge-btn.muted {
+  background: #f8fafc;
+  color: #94a3b8;
+  border: 1px solid #e2e8f0;
+}
+.sound-badge-btn.muted:hover {
+  background: #f1f5f9;
 }
 </style>
