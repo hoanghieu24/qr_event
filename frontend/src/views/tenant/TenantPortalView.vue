@@ -408,16 +408,32 @@ const assignment = ref({ staff_id: '', role: 'INVITER', max_invites: 50 });
 
 const filteredAttendees = computed(() => {
   const term = search.value.trim().toLowerCase();
-  if (!term) return attendees.value;
-  return attendees.value.filter((item) =>
-    [item.full_name, item.email, item.phone, item.referrer_name].some((value) =>
+  return attendees.value.filter((item) => {
+    const matchesSearch = !term || [item.full_name, item.email, item.phone, item.referrer_name, item.ticket_code].some((value) =>
       String(value || '').toLowerCase().includes(term)
-    )
-  );
+    );
+    if (!matchesSearch) return false;
+    if (attendeeFilter.value === 'PENDING') {
+      return item.registration_status === 'PENDING' || item.registration_status === 'PENDING_ADMIN';
+    }
+    if (attendeeFilter.value === 'APPROVED') {
+      return item.registration_status === 'APPROVED' && item.ticket_status !== 'USED';
+    }
+    if (attendeeFilter.value === 'USED') {
+      return item.ticket_status === 'USED';
+    }
+    return true;
+  });
 });
 const unassignedTeam = computed(() =>
   team.value.filter((member) => !eventTeam.value.some((assigned) => assigned.id === member.id))
 );
+const attendeeFilter = ref<'ALL' | 'PENDING' | 'APPROVED' | 'USED'>('ALL');
+
+const pendingCount = computed(
+  () => attendees.value.filter((item) => item.registration_status === 'PENDING' || item.registration_status === 'PENDING_ADMIN').length
+);
+
 const approvedCount = computed(
   () => attendees.value.filter((item) => item.registration_status === 'APPROVED').length
 );
@@ -3369,469 +3385,713 @@ onBeforeUnmount(stopScanner);
           </template>
 
           <template v-else>
-            <div class="page-heading event-heading">
-              <div>
-                <span class="eyebrow">BẢNG ĐIỀU HÀNH</span>
-                <h1>{{ activePanel === 'attendees' ? 'Danh sách khách mời' : 'Tổng quan sự kiện' }}</h1>
-                <p>Theo dõi khách đăng ký, vé QR và tiến độ check-in.</p>
-              </div>
-              <div class="event-picker-wrap">
-                <CalendarDays :size="17" />
-                <select
-                  :value="selectedEvent.id"
-                  @change="loadEventDetails(events.find((event) => event.id === Number(($event.target as HTMLSelectElement).value)))"
-                >
-                  <option v-for="event in events" :key="event.id" :value="event.id">{{ event.name }}</option>
-                </select>
-                <ChevronDown :size="15" />
-              </div>
-            </div>
-
-            <!-- BANNER CHỜ THANH TOÁN GÓI -->
-            <div v-if="selectedEvent.payment_status === 'PENDING_PAYMENT'" class="payment-alert-card">
-              <div class="payment-alert-left">
-                <div class="payment-alert-icon">⏳</div>
+            <!-- ========================================== -->
+            <!-- 1. TAB: TỔNG QUAN (OVERVIEW) -->
+            <!-- ========================================== -->
+            <template v-if="activePanel === 'overview'">
+              <div class="page-heading event-heading">
                 <div>
-                  <div class="payment-alert-title">Sự kiện đang chờ thanh toán gói {{ selectedEvent.package_name || 'dịch vụ' }}</div>
-                  <p class="payment-alert-desc">
-                    Gói sự kiện có chi phí <b>{{ Number(selectedEvent.package_price_vnd).toLocaleString('vi-VN') }} ₫</b> chưa được xác nhận thanh toán. Vui lòng thanh toán để mở khóa quyền mời khách và quét mã check-in.
-                  </p>
+                  <span class="eyebrow">BẢNG ĐIỀU HÀNH</span>
+                  <h1>Tổng quan sự kiện</h1>
+                  <p>Theo dõi tiến độ, số liệu khách mời và phát hành vé.</p>
                 </div>
-              </div>
-              <button type="button" class="payment-alert-btn" @click="openPaymentModal(selectedEvent)">
-                <CreditCard :size="16" />
-                <span>Thanh toán ngay (VietQR)</span>
-              </button>
-            </div>
-
-            <div class="event-banner">
-              <div class="event-banner-mark"><TicketCheck :size="24" /></div>
-              <div class="event-banner-copy">
-                <span class="status-pill" :class="selectedEvent.status === 'PUBLISHED' ? 'status-green' : 'status-gray'">
-                  {{ selectedEvent.status === 'PUBLISHED' ? 'Đang mở' : selectedEvent.status }}
-                </span>
-                <span
-                  v-if="selectedEvent.payment_status === 'PENDING_PAYMENT'"
-                  class="status-pill status-amber cursor-pointer"
-                  title="Bấm để quét mã thanh toán"
-                  @click="openPaymentModal(selectedEvent)"
-                >
-                  ⏳ Chờ thanh toán ({{ Number(selectedEvent.package_price_vnd).toLocaleString('vi-VN') }} ₫)
-                </span>
-                <span
-                  v-else-if="Number(selectedEvent.package_price_vnd) > 0"
-                  class="status-pill status-green"
-                >
-                  ✅ Đã thanh toán
-                </span>
-                <span
-                  v-if="selectedEvent.approval_mode"
-                  class="status-pill"
-                  :class="{
-                    'status-blue': selectedEvent.approval_mode === 'REFERRER_ONLY',
-                    'status-amber': selectedEvent.approval_mode === 'TWO_TIER',
-                    'status-green': selectedEvent.approval_mode === 'AUTO',
-                  }"
-                >
-                  {{ selectedEvent.approval_mode === 'REFERRER_ONLY' ? '1. Người mời duyệt' : selectedEvent.approval_mode === 'TWO_TIER' ? '2. Duyệt 2 cấp' : '3. Tự động cấp QR' }}
-                </span>
-                <h2>{{ selectedEvent.name }}</h2>
-                <div class="event-meta">
-                  <span><MapPin :size="15" />{{ selectedEvent.location }}</span>
-                  <span><Clock3 :size="15" />{{ formatDate(selectedEvent.start_at) }}</span>
-                  <span>{{ selectedEvent.package_name }} · {{ eventPackagePrice(selectedEvent) }}</span>
-                </div>
-                <div class="flex items-center gap-2 mt-3">
-                  <button type="button" class="px-2.5 py-1.5 rounded-lg border border-white/30 text-xs font-bold text-white hover:bg-white/10 flex items-center gap-1.5 transition cursor-pointer" @click="openEditEventModal(selectedEvent)">
-                    <Edit3 :size="13" /> Sửa thông tin & Sức chứa
-                  </button>
-                  <button v-if="selectedEvent.status === 'PUBLISHED'" class="close-event-button" @click="closeEvent">
-                    Đóng sự kiện
-                  </button>
-                </div>
-              </div>
-              <div class="capacity-ring">
-                <b>{{ selectedEvent.capacity ? Math.round((attendees.length / selectedEvent.capacity) * 100) : 0 }}%</b>
-                <small>{{ attendees.length }}/{{ selectedEvent.capacity }} khách</small>
-              </div>
-            </div>
-
-            <div class="metric-grid">
-              <article class="metric-card">
-                <span class="metric-icon blue"><Users :size="19" /></span>
-                <span class="metric-label">Đã đăng ký</span>
-                <b>{{ attendees.length }}</b>
-                <small>trên {{ selectedEvent.capacity }} chỗ</small>
-              </article>
-              <article class="metric-card">
-                <span class="metric-icon green"><TicketCheck :size="19" /></span>
-                <span class="metric-label">Đã duyệt / có vé</span>
-                <b>{{ approvedCount }}</b>
-                <small>vé QR đã phát hành</small>
-              </article>
-              <article class="metric-card">
-                <span class="metric-icon violet"><QrCode :size="19" /></span>
-                <span class="metric-label">Đã check-in</span>
-                <b>{{ checkedInCount }}</b>
-                <small>{{ approvedCount ? Math.round((checkedInCount / approvedCount) * 100) : 0 }}% khách có vé</small>
-              </article>
-              <article class="metric-card">
-                <span class="metric-icon amber"><Users :size="19" /></span>
-                <span class="metric-label">Đội ngũ được gán</span>
-                <b>{{ eventTeam.length }}</b>
-                <small>nhân sự vận hành</small>
-              </article>
-            </div>
-
-            <!-- KHỐI PHÁT HÀNH LINK MỜI, MÃ QR & THƯ MỜI VIP DÀNH CHO ADMIN / BAN TỔ CHỨC -->
-            <section
-              v-if="activePanel === 'overview' || activePanel === 'invites'"
-              class="card p-4 sm:p-5 bg-white rounded-2xl border border-slate-200 shadow-xs space-y-4"
-              :class="activePanel === 'invites' ? 'ring-2 ring-primary-500/20' : ''"
-            >
-              <div class="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 border-b border-slate-100 pb-3">
-                <div>
-                  <div class="flex items-center gap-2">
-                    <span class="inline-flex items-center rounded-full bg-primary-50 px-2.5 py-0.5 text-[11px] font-bold text-primary-700 border border-primary-200">
-                      💌 Kênh Phát Hành Thư Mời & Mã QR
-                    </span>
-                    <span class="text-xs text-slate-400">· Dành cho Ban Tổ Chức</span>
-                  </div>
-                  <h2 class="text-base sm:text-lg font-black text-slate-900 mt-1">
-                    Link đăng ký, Mã QR & Thiết kế Thư mời VIP
-                  </h2>
-                  <p class="text-xs text-slate-500">
-                    Chia sẻ link mời sự kiện, tải mã QR để in ấn backdrop/standee hoặc tạo thiệp mời online trang trọng gửi khách VIP.
-                  </p>
-                </div>
-
-                <div class="flex flex-wrap items-center gap-2 shrink-0">
-                  <button
-                    type="button"
-                    @click="openAdminInviteCard()"
-                    class="px-3.5 py-2 rounded-xl bg-gradient-to-r from-amber-500 via-orange-500 to-amber-600 hover:from-amber-600 hover:to-orange-600 text-white font-bold text-xs shadow-xs flex items-center gap-1.5 transition cursor-pointer"
+                <div class="event-picker-wrap">
+                  <CalendarDays :size="17" />
+                  <select
+                    :value="selectedEvent.id"
+                    @change="loadEventDetails(events.find((event) => event.id === Number(($event.target as HTMLSelectElement).value)))"
                   >
-                    <Sparkles :size="15" />
-                    <span>Thiết kế Thư mời / Thiệp VIP</span>
-                  </button>
-                  <button
-                    type="button"
-                    @click="showTenantInviteModal = true"
-                    class="px-3 py-2 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold text-xs flex items-center gap-1 transition cursor-pointer"
-                  >
-                    <Plus :size="15" />
-                    <span>Tạo link mới</span>
-                  </button>
+                    <option v-for="event in events" :key="event.id" :value="event.id">{{ event.name }}</option>
+                  </select>
+                  <ChevronDown :size="15" />
                 </div>
               </div>
 
-              <div class="grid gap-4 md:grid-cols-2">
-                <!-- Cột 1: Link Mời & Chia sẻ -->
-                <div class="p-4 rounded-xl bg-slate-50 border border-slate-200/80 flex flex-col justify-between gap-3">
+              <!-- BANNER CHỜ THANH TOÁN GÓI -->
+              <div v-if="selectedEvent.payment_status === 'PENDING_PAYMENT'" class="payment-alert-card">
+                <div class="payment-alert-left">
+                  <div class="payment-alert-icon">⏳</div>
                   <div>
-                    <span class="text-[11px] font-bold uppercase tracking-wider text-slate-500 block mb-1">
-                      Link mời tham gia sự kiện chính thức
+                    <div class="payment-alert-title">Sự kiện đang chờ thanh toán gói {{ selectedEvent.package_name || 'dịch vụ' }}</div>
+                    <p class="payment-alert-desc">
+                      Gói sự kiện có chi phí <b>{{ Number(selectedEvent.package_price_vnd).toLocaleString('vi-VN') }} ₫</b> chưa được xác nhận thanh toán. Vui lòng thanh toán để mở khóa quyền mời khách và quét mã check-in.
+                    </p>
+                  </div>
+                </div>
+                <button type="button" class="payment-alert-btn" @click="openPaymentModal(selectedEvent)">
+                  <CreditCard :size="16" />
+                  <span>Thanh toán ngay (VietQR)</span>
+                </button>
+              </div>
+
+              <!-- THẺ TÓM TẮT SỰ KIỆN -->
+              <div class="event-banner">
+                <div class="event-banner-mark"><TicketCheck :size="24" /></div>
+                <div class="event-banner-copy">
+                  <span class="status-pill" :class="selectedEvent.status === 'PUBLISHED' ? 'status-green' : 'status-gray'">
+                    {{ selectedEvent.status === 'PUBLISHED' ? 'Đang mở' : selectedEvent.status }}
+                  </span>
+                  <span
+                    v-if="selectedEvent.payment_status === 'PENDING_PAYMENT'"
+                    class="status-pill status-amber cursor-pointer"
+                    title="Bấm để quét mã thanh toán"
+                    @click="openPaymentModal(selectedEvent)"
+                  >
+                    ⏳ Chờ thanh toán ({{ Number(selectedEvent.package_price_vnd).toLocaleString('vi-VN') }} ₫)
+                  </span>
+                  <span
+                    v-else-if="Number(selectedEvent.package_price_vnd) > 0"
+                    class="status-pill status-green"
+                  >
+                    ✅ Đã thanh toán
+                  </span>
+                  <span
+                    v-if="selectedEvent.approval_mode"
+                    class="status-pill"
+                    :class="{
+                      'status-blue': selectedEvent.approval_mode === 'REFERRER_ONLY',
+                      'status-amber': selectedEvent.approval_mode === 'TWO_TIER',
+                      'status-green': selectedEvent.approval_mode === 'AUTO',
+                    }"
+                  >
+                    {{ selectedEvent.approval_mode === 'REFERRER_ONLY' ? '1. Người mời duyệt' : selectedEvent.approval_mode === 'TWO_TIER' ? '2. Duyệt 2 cấp' : '3. Tự động cấp QR' }}
+                  </span>
+                  <h2>{{ selectedEvent.name }}</h2>
+                  <div class="event-meta">
+                    <span><MapPin :size="15" />{{ selectedEvent.location }}</span>
+                    <span><Clock3 :size="15" />{{ formatDate(selectedEvent.start_at) }}</span>
+                    <span>{{ selectedEvent.package_name }} · {{ eventPackagePrice(selectedEvent) }}</span>
+                  </div>
+                  <div class="flex items-center gap-2 mt-3">
+                    <button type="button" class="px-2.5 py-1.5 rounded-lg border border-white/30 text-xs font-bold text-white hover:bg-white/10 flex items-center gap-1.5 transition cursor-pointer" @click="openEditEventModal(selectedEvent)">
+                      <Edit3 :size="13" /> Sửa thông tin
+                    </button>
+                    <button v-if="selectedEvent.status === 'PUBLISHED'" class="close-event-button" @click="closeEvent">
+                      Đóng sự kiện
+                    </button>
+                  </div>
+                </div>
+                <div class="capacity-ring">
+                  <b>{{ selectedEvent.capacity ? Math.round((attendees.length / selectedEvent.capacity) * 100) : 0 }}%</b>
+                  <small>{{ attendees.length }}/{{ selectedEvent.capacity }} khách</small>
+                </div>
+              </div>
+
+              <!-- LỐI TẮT THAO TÁC NHANH MOBILE (QUICK ACTIONS) -->
+              <div class="grid grid-cols-3 gap-2.5 my-3">
+                <button
+                  type="button"
+                  @click="selectedScannerEventId = selectedEvent?.id || null; activePanel = 'scanner'"
+                  class="p-3 rounded-2xl bg-gradient-to-br from-emerald-50 to-teal-50/80 border border-emerald-200/90 text-emerald-950 flex flex-col items-center justify-center gap-1.5 transition shadow-2xs hover:shadow-xs active:scale-98 cursor-pointer"
+                >
+                  <div class="p-2 rounded-xl bg-emerald-600 text-white shadow-2xs">
+                    <Camera :size="18" />
+                  </div>
+                  <span class="text-[11px] font-bold">Soát vé QR</span>
+                </button>
+
+                <button
+                  type="button"
+                  @click="activePanel = 'invites'"
+                  class="p-3 rounded-2xl bg-gradient-to-br from-amber-50 to-orange-50/80 border border-amber-200/90 text-amber-950 flex flex-col items-center justify-center gap-1.5 transition shadow-2xs hover:shadow-xs active:scale-98 cursor-pointer"
+                >
+                  <div class="p-2 rounded-xl bg-amber-500 text-white shadow-2xs">
+                    <Sparkles :size="18" />
+                  </div>
+                  <span class="text-[11px] font-bold">Thư mời & QR</span>
+                </button>
+
+                <button
+                  type="button"
+                  @click="activePanel = 'attendees'"
+                  class="p-3 rounded-2xl bg-gradient-to-br from-indigo-50 to-sky-50/80 border border-indigo-200/90 text-indigo-950 flex flex-col items-center justify-center gap-1.5 transition shadow-2xs hover:shadow-xs active:scale-98 cursor-pointer"
+                >
+                  <div class="p-2 rounded-xl bg-indigo-600 text-white shadow-2xs">
+                    <Users :size="18" />
+                  </div>
+                  <span class="text-[11px] font-bold">Khách mời</span>
+                </button>
+              </div>
+
+              <!-- 4 CHỈ SỐ THỐNG KÊ (2x2 GRID) -->
+              <div class="metric-grid">
+                <article class="metric-card">
+                  <span class="metric-icon blue"><Users :size="19" /></span>
+                  <span class="metric-label">Đã đăng ký</span>
+                  <b>{{ attendees.length }}</b>
+                  <small>trên {{ selectedEvent.capacity }} chỗ</small>
+                </article>
+                <article class="metric-card">
+                  <span class="metric-icon green"><TicketCheck :size="19" /></span>
+                  <span class="metric-label">Đã duyệt / có vé</span>
+                  <b>{{ approvedCount }}</b>
+                  <small>vé QR đã phát hành</small>
+                </article>
+                <article class="metric-card">
+                  <span class="metric-icon violet"><QrCode :size="19" /></span>
+                  <span class="metric-label">Đã check-in</span>
+                  <b>{{ checkedInCount }}</b>
+                  <small>{{ approvedCount ? Math.round((checkedInCount / approvedCount) * 100) : 0 }}% khách có vé</small>
+                </article>
+                <article class="metric-card">
+                  <span class="metric-icon amber"><Users :size="19" /></span>
+                  <span class="metric-label">Đội ngũ được gán</span>
+                  <b>{{ eventTeam.length }}</b>
+                  <small>nhân sự vận hành</small>
+                </article>
+              </div>
+
+              <!-- THẺ THƯ MỜI & LINK QR (COMPACT & BEAUTIFUL) -->
+              <section class="card p-4 sm:p-5 bg-gradient-to-br from-white via-slate-50 to-indigo-50/40 rounded-3xl border border-slate-200/90 shadow-2xs space-y-3.5">
+                <div class="flex items-center justify-between gap-3 border-b border-slate-100 pb-3">
+                  <div class="flex items-center gap-2">
+                    <span class="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-primary-50 border border-primary-200 text-primary-700 text-xs font-bold">
+                      <Sparkles :size="13" class="text-primary-600" />
+                      Kênh Mời & Mã QR Chính Thức
                     </span>
-                    <div class="flex items-center gap-2">
-                      <div class="flex-1 p-2.5 bg-white border border-slate-200 rounded-xl text-xs font-mono font-bold text-primary-700 truncate select-all">
-                        {{ tenantActiveInviteLink?.invite_url || (loadingTenantInvites ? 'Đang tạo link mời chính thức...' : 'Đang lấy link mời...') }}
+                  </div>
+                  <button
+                    type="button"
+                    @click="activePanel = 'invites'"
+                    class="text-xs font-bold text-primary-600 hover:text-primary-800 flex items-center gap-1 cursor-pointer"
+                  >
+                    Xem chi tiết <ArrowRight :size="13" />
+                  </button>
+                </div>
+
+                <div class="grid sm:grid-cols-[130px_1fr] gap-3.5 items-center">
+                  <!-- QR Code Mini Box -->
+                  <div class="flex flex-col items-center gap-2 p-2.5 bg-white rounded-2xl border border-slate-200/80 shadow-2xs">
+                    <div
+                      @click="showTenantZoomQrModal = true"
+                      class="relative p-1 bg-white rounded-xl cursor-pointer hover:scale-102 transition group"
+                      title="Chạm để phóng to mã QR"
+                    >
+                      <img
+                        v-if="tenantInviteQrUrl"
+                        :src="tenantInviteQrUrl"
+                        alt="Mã QR Mời"
+                        class="w-28 h-28 object-contain rounded-lg"
+                      />
+                      <div v-else class="w-28 h-28 flex flex-col items-center justify-center text-slate-400 text-xs text-center p-2">
+                        <span v-if="loadingTenantInvites">Đang tạo...</span>
+                        <button v-else type="button" @click.stop="selectedEvent?.id && loadTenantEventInvites(selectedEvent.id)" class="text-primary-600 font-bold underline">Tạo QR</button>
                       </div>
+                      <div v-if="tenantInviteQrUrl" class="absolute inset-0 bg-primary-900/60 rounded-xl opacity-0 group-hover:opacity-100 transition flex items-center justify-center text-white text-[11px] font-bold gap-1 pointer-events-none">
+                        <Maximize2 :size="13" /> Phóng to
+                      </div>
+                    </div>
+                    <button
+                      type="button"
+                      @click="showTenantZoomQrModal = true"
+                      :disabled="!tenantInviteQrUrl"
+                      class="w-full py-1 px-2 bg-slate-100 hover:bg-slate-200 rounded-lg text-slate-700 text-[11px] font-bold flex items-center justify-center gap-1 transition cursor-pointer"
+                    >
+                      <Maximize2 :size="11" /> Phóng to QR
+                    </button>
+                  </div>
+
+                  <!-- Link Box & Actions -->
+                  <div class="space-y-2.5">
+                    <div>
+                      <span class="text-[11px] font-bold uppercase tracking-wider text-slate-500 block mb-1">
+                        Link đăng ký tham dự chính thức
+                      </span>
+                      <div class="flex items-center gap-1.5 p-1 bg-white border border-slate-200 rounded-xl shadow-2xs">
+                        <span class="pl-2 text-slate-400 shrink-0"><Link2 :size="14" /></span>
+                        <input
+                          readonly
+                          :value="tenantActiveInviteLink?.invite_url || (loadingTenantInvites ? 'Đang tạo link mời...' : 'Đang lấy link...')"
+                          class="flex-1 text-xs font-mono font-bold text-primary-700 bg-transparent border-0 outline-none select-all truncate py-1.5"
+                        />
+                        <button
+                          type="button"
+                          @click="copyTenantInviteLink()"
+                          :disabled="!tenantActiveInviteLink?.invite_url"
+                          class="px-3 py-1.5 rounded-lg bg-primary-700 hover:bg-primary-800 text-white text-xs font-bold flex items-center gap-1 shrink-0 transition cursor-pointer"
+                        >
+                          <Check v-if="copiedTenantInviteLink" :size="13" />
+                          <Copy v-else :size="13" />
+                          <span>{{ copiedTenantInviteLink ? 'Đã chép' : 'Sao chép' }}</span>
+                        </button>
+                      </div>
+                    </div>
+
+                    <div class="grid grid-cols-2 gap-2">
                       <button
                         type="button"
-                        @click="copyTenantInviteLink()"
+                        @click="shareTenantInviteLink()"
                         :disabled="!tenantActiveInviteLink?.invite_url"
-                        class="p-2.5 rounded-xl bg-white border border-slate-200 text-slate-700 hover:text-primary-700 hover:border-primary-300 transition cursor-pointer shrink-0"
-                        title="Sao chép link"
+                        class="py-2 px-2.5 rounded-xl bg-white border border-slate-200 hover:border-primary-300 text-slate-700 text-xs font-bold flex items-center justify-center gap-1.5 shadow-2xs transition cursor-pointer"
                       >
-                        <Check v-if="copiedTenantInviteLink" :size="16" class="text-emerald-600" />
-                        <Copy v-else :size="16" />
+                        <Share2 :size="13" class="text-primary-600" />
+                        <span>Chia sẻ Zalo/SMS</span>
+                      </button>
+                      <button
+                        type="button"
+                        @click="openAdminInviteCard()"
+                        class="py-2 px-2.5 rounded-xl bg-gradient-to-r from-amber-500 to-orange-500 hover:from-amber-600 hover:to-orange-600 text-white text-xs font-bold flex items-center justify-center gap-1.5 shadow-xs transition cursor-pointer"
+                      >
+                        <Sparkles :size="13" />
+                        <span>Tạo thiệp VIP</span>
                       </button>
                     </div>
                   </div>
+                </div>
+              </section>
 
-                  <div class="flex flex-wrap items-center gap-2 pt-1">
-                    <button
-                      type="button"
-                      @click="copyTenantInviteLink()"
-                      :disabled="!tenantActiveInviteLink?.invite_url"
-                      class="btn btn-primary py-2 px-3 text-xs font-bold gap-1.5 flex-1 justify-center"
-                    >
-                      <Check v-if="copiedTenantInviteLink" :size="14" />
-                      <Copy v-else :size="14" />
-                      <span>{{ copiedTenantInviteLink ? 'Đã sao chép!' : 'Sao chép link mời' }}</span>
-                    </button>
-                    <button
-                      type="button"
-                      @click="shareTenantInviteLink()"
-                      :disabled="!tenantActiveInviteLink?.invite_url"
-                      class="btn btn-secondary py-2 px-3 text-xs font-bold gap-1.5 flex-1 justify-center text-primary-700 border-primary-200 hover:bg-primary-50"
-                    >
-                      <Share2 :size="14" />
-                      <span>Chia sẻ Zalo/SMS</span>
-                    </button>
-                    <button
-                      type="button"
-                      @click="openAdminInviteCard()"
-                      class="btn py-2 px-3 text-xs font-bold gap-1.5 bg-amber-50 text-amber-800 border border-amber-200 hover:bg-amber-100 justify-center"
-                    >
-                      <Sparkles :size="14" class="text-amber-600" />
-                      <span>Tạo thiệp VIP</span>
-                    </button>
+              <!-- KHÁCH MỜI GẦN ĐÂY (TOP 4) -->
+              <section class="surface-card attendee-card">
+                <div class="surface-heading">
+                  <div>
+                    <h2>Khách mời đăng ký gần đây</h2>
+                    <p>Cập nhật lượt đăng ký và trạng thái vé mới nhất.</p>
+                  </div>
+                  <button class="secondary-button" @click="activePanel = 'attendees'">
+                    Xem tất cả ({{ attendees.length }}) <ArrowRight :size="14" />
+                  </button>
+                </div>
+                <div v-if="!attendees.length" class="empty-state compact">
+                  <Users :size="24" />
+                  <span>Chưa có khách đăng ký cho sự kiện này.</span>
+                </div>
+                <div v-else class="divide-y divide-slate-100">
+                  <div
+                    v-for="attendee in attendees.slice(0, 4)"
+                    :key="attendee.registration_id"
+                    class="p-3 flex items-center justify-between gap-3 hover:bg-slate-50 transition"
+                  >
+                    <div>
+                      <b class="text-xs font-bold text-slate-800 block">{{ attendee.full_name }}</b>
+                      <span class="text-[11px] text-slate-500 font-mono">{{ attendee.phone || attendee.email }}</span>
+                    </div>
+                    <div class="flex items-center gap-2 shrink-0">
+                      <span
+                        class="status-pill text-[10px]"
+                        :class="attendee.registration_status === 'APPROVED' ? 'status-green' : attendee.registration_status === 'REJECTED' ? 'status-gray' : 'status-amber'"
+                      >
+                        {{ attendee.registration_status === 'APPROVED' ? 'Đã duyệt' : attendee.registration_status === 'REJECTED' ? 'Từ chối' : 'Chờ duyệt' }}
+                      </span>
+                      <button
+                        type="button"
+                        @click="openAdminInviteCard(attendee)"
+                        class="p-1.5 rounded-lg bg-amber-50 text-amber-800 border border-amber-200 text-[11px] font-bold hover:bg-amber-100 cursor-pointer"
+                        title="Tạo thiệp VIP"
+                      >
+                        <Sparkles :size="12" class="text-amber-600" />
+                      </button>
+                    </div>
                   </div>
                 </div>
+              </section>
+            </template>
 
-                <!-- Cột 2: Mã QR Mời Trực Tiếp -->
-                <div class="p-4 rounded-xl bg-slate-50 border border-slate-200/80 flex flex-col sm:flex-row items-center gap-4">
-                  <div
-                    @click="showTenantZoomQrModal = true"
-                    class="p-2 bg-white rounded-xl border border-slate-200 shadow-xs cursor-pointer hover:border-primary-400 transition group relative shrink-0"
-                    title="Chạm để phóng to mã QR"
+            <!-- ========================================== -->
+            <!-- 2. TAB: THƯ MỜI & MÃ QR (INVITES) -->
+            <!-- ========================================== -->
+            <template v-else-if="activePanel === 'invites'">
+              <div class="page-heading event-heading">
+                <div>
+                  <span class="eyebrow">KÊNH PHÁT HÀNH</span>
+                  <h1>Thư mời & Mã QR Sự Kiện</h1>
+                  <p>Chia sẻ link mời, xuất ảnh QR hoặc tạo thiệp VIP trang trọng gửi khách quý.</p>
+                </div>
+                <div class="event-picker-wrap">
+                  <CalendarDays :size="17" />
+                  <select
+                    :value="selectedEvent.id"
+                    @change="loadEventDetails(events.find((event) => event.id === Number(($event.target as HTMLSelectElement).value)))"
                   >
-                    <img
-                      v-if="tenantInviteQrUrl"
-                      :src="tenantInviteQrUrl"
-                      alt="Mã QR Mời"
-                      class="w-28 h-28 object-contain"
-                    />
-                    <div v-else class="w-28 h-28 flex items-center justify-center text-slate-400 text-[10px]">
-                      Đang tạo QR...
-                    </div>
-                    <div class="absolute inset-0 bg-primary-900/60 rounded-xl opacity-0 group-hover:opacity-100 transition flex flex-col items-center justify-center text-white text-[10px] font-bold gap-1 pointer-events-none">
-                      <Maximize2 :size="16" />
-                      <span>Phóng to</span>
-                    </div>
+                    <option v-for="event in events" :key="event.id" :value="event.id">{{ event.name }}</option>
+                  </select>
+                  <ChevronDown :size="15" />
+                </div>
+              </div>
+
+              <!-- THẺ HERO MÃ QR & LINK MỜI CAO CẤP -->
+              <section class="card p-4 sm:p-6 bg-gradient-to-br from-white via-slate-50 to-indigo-50/50 rounded-3xl border border-slate-200/90 shadow-sm space-y-4">
+                <div class="flex items-center justify-between gap-3 border-b border-slate-100 pb-3">
+                  <div class="flex items-center gap-2">
+                    <span class="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-primary-50 border border-primary-200 text-primary-700 text-xs font-bold">
+                      <Sparkles :size="13" class="text-primary-600" />
+                      Mã QR & Link Mời Chính Thức
+                    </span>
                   </div>
 
-                  <div class="space-y-2 text-center sm:text-left flex-1">
-                    <b class="text-xs font-bold text-slate-800 block">Mã QR Mời Đăng Ký Trực Tiếp</b>
-                    <p class="text-[11px] text-slate-500">Khách quét bằng Camera hoặc Zalo để vào ngay trang đăng ký.</p>
-                    <div class="flex flex-wrap items-center justify-center sm:justify-start gap-2 pt-1">
+                  <button
+                    type="button"
+                    @click="showTenantInviteModal = true"
+                    class="px-3 py-1.5 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold text-xs flex items-center gap-1 transition cursor-pointer"
+                  >
+                    <Plus :size="14" />
+                    <span>Tạo link mới</span>
+                  </button>
+                </div>
+
+                <div class="grid sm:grid-cols-[170px_1fr] gap-4 items-center">
+                  <!-- QR Code Centerpiece -->
+                  <div class="flex flex-col items-center gap-2.5 p-3.5 bg-white rounded-2xl border border-slate-200 shadow-2xs">
+                    <div
+                      @click="showTenantZoomQrModal = true"
+                      class="relative p-1 bg-white rounded-xl cursor-pointer hover:scale-102 transition group"
+                      title="Chạm để phóng to mã QR"
+                    >
+                      <img
+                        v-if="tenantInviteQrUrl"
+                        :src="tenantInviteQrUrl"
+                        alt="Mã QR Mời"
+                        class="w-32 h-32 sm:w-36 sm:h-36 object-contain rounded-lg"
+                      />
+                      <div v-else class="w-32 h-32 sm:w-36 sm:h-36 flex flex-col items-center justify-center text-slate-400 text-xs text-center p-2">
+                        <span v-if="loadingTenantInvites">Đang tạo QR...</span>
+                        <button v-else type="button" @click.stop="selectedEvent?.id && loadTenantEventInvites(selectedEvent.id)" class="text-primary-600 font-bold underline">
+                          Tạo QR ngay
+                        </button>
+                      </div>
+                      <div v-if="tenantInviteQrUrl" class="absolute inset-0 bg-primary-900/60 rounded-xl opacity-0 group-hover:opacity-100 transition flex items-center justify-center text-white text-xs font-bold gap-1 pointer-events-none">
+                        <Maximize2 :size="14" /> Phóng to
+                      </div>
+                    </div>
+
+                    <div class="flex items-center gap-1.5 w-full">
                       <button
                         type="button"
                         @click="showTenantZoomQrModal = true"
-                        class="px-2.5 py-1.5 rounded-lg bg-white border border-slate-200 hover:bg-slate-100 text-slate-700 text-[11px] font-bold flex items-center gap-1 cursor-pointer"
+                        :disabled="!tenantInviteQrUrl"
+                        class="flex-1 py-1.5 px-2 bg-slate-100 hover:bg-slate-200 rounded-xl text-slate-700 text-xs font-bold flex items-center justify-center gap-1 transition cursor-pointer"
                       >
-                        <Maximize2 :size="12" /> Phóng to QR
+                        <Maximize2 :size="12" /> Phóng to
                       </button>
                       <a
                         v-if="tenantInviteQrUrl"
                         :href="tenantInviteQrUrl"
                         :download="`QR-${selectedEvent?.name || 'sukien'}.png`"
-                        class="px-2.5 py-1.5 rounded-lg bg-primary-50 border border-primary-200 text-primary-700 hover:bg-primary-100 text-[11px] font-bold flex items-center gap-1 cursor-pointer"
+                        class="flex-1 py-1.5 px-2 bg-primary-50 hover:bg-primary-100 text-primary-700 border border-primary-200 rounded-xl text-xs font-bold flex items-center justify-center gap-1 transition text-center cursor-pointer"
                       >
-                        <Download :size="12" /> Tải ảnh QR
+                        <Download :size="12" /> Tải về
                       </a>
                     </div>
                   </div>
-                </div>
-              </div>
 
-              <!-- Danh sách các link mời đã tạo (nếu có nhiều hơn 1) -->
-              <div v-if="tenantEventInvites.length > 1" class="pt-2 border-t border-slate-100">
-                <span class="text-xs font-bold text-slate-700 block mb-2">Các link mời khác của sự kiện:</span>
-                <div class="divide-y divide-slate-100 border border-slate-100 rounded-xl overflow-hidden bg-white">
-                  <div v-for="link in tenantEventInvites" :key="link.id" class="p-2.5 flex items-center justify-between text-xs gap-3 hover:bg-slate-50">
-                    <div class="min-w-0">
-                      <span class="font-bold text-slate-800">{{ link.referrer_name }}</span>
-                      <span class="text-slate-400 text-[11px] ml-1.5 font-mono">{{ link.token }}</span>
-                    </div>
-                    <div class="flex items-center gap-3 shrink-0">
-                      <span class="text-[11px] text-slate-500 font-semibold">{{ link.total_registered || 0 }} khách đã đăng ký</span>
-                      <button type="button" @click="copyTenantInviteLink(link.invite_url)" class="text-primary-600 font-bold hover:underline text-[11px] cursor-pointer">
-                        Sao chép link
-                      </button>
-                      <button type="button" @click="shareTenantInviteLink(link.invite_url)" class="text-slate-600 font-semibold hover:text-slate-900 text-[11px] cursor-pointer">
-                        Chia sẻ
-                      </button>
-                    </div>
-                  </div>
-                </div>
-              </div>
-            </section>
-
-            <section class="surface-card attendee-card">
-              <div class="surface-heading">
-                <div>
-                  <h2>{{ activePanel === 'attendees' ? 'Khách tham dự' : 'Khách mời gần đây' }}</h2>
-                  <p>Thông tin đăng ký và trạng thái vé QR.</p>
-                </div>
-                <div class="table-actions">
-                  <div class="search-box">
-                    <Search :size="16" />
-                    <input v-model="search" placeholder="Tìm khách mời..." />
-                  </div>
-                  <button class="secondary-button" @click="exportAttendees">
-                    <ArrowDownToLine :size="16" />Xuất danh sách
-                  </button>
-                </div>
-              </div>
-              <div v-if="!filteredAttendees.length" class="empty-state compact">
-                <Users :size="26" />
-                <span>Chưa có khách đăng ký cho sự kiện này.</span>
-              </div>
-              <div v-else>
-                <!-- Giao diện Mobile cho Khách Mời (Thẻ Cards) -->
-                <div class="sm:hidden divide-y divide-slate-100 p-2">
-                  <div
-                    v-for="attendee in filteredAttendees.slice(0, activePanel === 'attendees' ? undefined : 8)"
-                    :key="attendee.registration_id"
-                    class="p-3 space-y-2 bg-slate-50/70 rounded-xl mb-2 border border-slate-100"
-                  >
-                    <div class="flex items-start justify-between gap-2">
-                      <div>
-                        <b class="text-sm font-bold text-slate-900 block">{{ attendee.full_name }}</b>
-                        <span class="text-xs text-slate-500 font-mono">{{ attendee.phone || attendee.email }}</span>
+                  <!-- Link Box & Features -->
+                  <div class="space-y-3">
+                    <div>
+                      <span class="text-xs font-bold uppercase tracking-wider text-slate-500 block mb-1">
+                        Đường link mời chính thức
+                      </span>
+                      <div class="flex items-center gap-2 p-1 bg-white border border-slate-200 rounded-2xl shadow-2xs">
+                        <span class="pl-2.5 text-slate-400 shrink-0"><Link2 :size="15" /></span>
+                        <input
+                          readonly
+                          :value="tenantActiveInviteLink?.invite_url || (loadingTenantInvites ? 'Đang tạo link mời...' : 'Đang lấy link...')"
+                          class="flex-1 text-xs font-mono font-bold text-primary-700 bg-transparent border-0 outline-none select-all truncate py-1.5"
+                        />
+                        <button
+                          type="button"
+                          @click="copyTenantInviteLink()"
+                          :disabled="!tenantActiveInviteLink?.invite_url"
+                          class="px-3.5 py-2 rounded-xl bg-primary-700 hover:bg-primary-800 text-white text-xs font-bold flex items-center gap-1.5 shrink-0 transition cursor-pointer"
+                        >
+                          <Check v-if="copiedTenantInviteLink" :size="13" />
+                          <Copy v-else :size="13" />
+                          <span>{{ copiedTenantInviteLink ? 'Đã chép!' : 'Sao chép' }}</span>
+                        </button>
                       </div>
-                      <span
-                        class="status-pill text-[10px]"
-                        :class="attendee.registration_status === 'APPROVED' ? 'status-green' : attendee.registration_status === 'REJECTED' ? 'status-gray' : 'status-amber'"
-                      >
-                        {{ attendee.registration_status === 'APPROVED' ? 'Đã duyệt' : attendee.registration_status === 'REJECTED' ? 'Từ chối' : attendee.registration_status === 'PENDING_ADMIN' ? 'Chờ BTC duyệt' : 'Đang chờ' }}
-                      </span>
                     </div>
 
-                    <div class="flex items-center justify-between text-xs text-slate-600">
-                      <span>Mã vé: <code class="font-mono font-bold text-primary-700">{{ attendee.ticket_code || 'Chưa có' }}</code></span>
-                      <span v-if="attendee.ticket_status === 'USED'" class="text-indigo-600 font-bold text-[11px] flex items-center gap-1">
-                        <Check :size="12" /> Đã vào cổng
-                      </span>
-                      <span v-else class="text-slate-400 text-[11px]">Chưa check-in</span>
+                    <div class="grid grid-cols-2 gap-2">
+                      <button
+                        type="button"
+                        @click="shareTenantInviteLink()"
+                        :disabled="!tenantActiveInviteLink?.invite_url"
+                        class="py-2.5 px-3 rounded-2xl bg-white border border-slate-200 hover:border-primary-300 text-slate-700 text-xs font-bold flex items-center justify-center gap-1.5 shadow-2xs transition cursor-pointer"
+                      >
+                        <Share2 :size="14" class="text-primary-600" />
+                        <span>Chia sẻ Zalo/SMS</span>
+                      </button>
+
+                      <button
+                        type="button"
+                        @click="openAdminInviteCard()"
+                        class="py-2.5 px-3 rounded-2xl bg-gradient-to-r from-amber-500 via-orange-500 to-amber-600 hover:from-amber-600 hover:to-orange-600 text-white text-xs font-bold flex items-center justify-center gap-1.5 shadow-xs transition cursor-pointer"
+                      >
+                        <Sparkles :size="14" />
+                        <span>Tạo thiệp VIP</span>
+                      </button>
                     </div>
 
-                    <div class="flex items-center justify-end gap-1.5 pt-1 border-t border-slate-200/60">
-                      <button
-                        type="button"
-                        class="px-2.5 py-1 rounded-lg bg-amber-50 text-amber-800 border border-amber-200 font-bold text-xs flex items-center gap-1 cursor-pointer"
-                        title="Tạo thiệp VIP gửi khách này"
-                        @click="openAdminInviteCard(attendee)"
-                      >
-                        <Sparkles :size="12" class="text-amber-600" />
-                        <span>Thiệp VIP</span>
-                      </button>
-                      <button
-                        v-if="attendee.registration_status === 'PENDING' || attendee.registration_status === 'PENDING_ADMIN'"
-                        type="button"
-                        class="px-3 py-1 rounded-lg bg-rose-50 text-rose-600 border border-rose-200 font-bold text-xs cursor-pointer"
-                        @click="rejectTenantAttendee(attendee)"
-                      >
-                        Từ chối
-                      </button>
-                      <button
-                        v-if="attendee.registration_status === 'PENDING' || attendee.registration_status === 'PENDING_ADMIN'"
-                        type="button"
-                        class="px-3.5 py-1 rounded-lg bg-emerald-600 text-white font-bold text-xs cursor-pointer"
-                        @click="approveTenantAttendee(attendee.registration_id)"
-                      >
-                        Duyệt vé
-                      </button>
+                    <div class="p-3 bg-amber-50/70 border border-amber-200/80 rounded-2xl flex items-start gap-2.5 text-xs text-amber-900">
+                      <Sparkles :size="15" class="text-amber-600 shrink-0 mt-0.5" />
+                      <div>
+                        <b>Mẹo:</b> Bấm <strong>Tạo thiệp VIP</strong> để hệ thống tự động sinh thiệp mời online trang trọng có tên khách và mã QR riêng gửi tặng từng đối tác, khách quý.
+                      </div>
                     </div>
                   </div>
                 </div>
 
-                <!-- Desktop Table -->
-                <div class="hidden sm:block table-scroll">
-                <table>
-                  <thead>
-                    <tr>
-                      <th>Khách mời</th>
-                      <th>Người giới thiệu</th>
-                      <th>Trạng thái đăng ký</th>
-                      <th>Vé QR</th>
-                      <th>Check-in</th>
-                      <th>Thao tác</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    <tr
-                      v-for="attendee in filteredAttendees.slice(0, activePanel === 'attendees' ? undefined : 8)"
-                      :key="attendee.registration_id"
+                <!-- Danh sách các link mời đã tạo -->
+                <div v-if="tenantEventInvites.length > 1" class="pt-3 border-t border-slate-100">
+                  <span class="text-xs font-bold text-slate-700 block mb-2">Tất cả các link mời của sự kiện này ({{ tenantEventInvites.length }} link):</span>
+                  <div class="divide-y divide-slate-100 border border-slate-200/80 rounded-2xl overflow-hidden bg-white shadow-2xs">
+                    <div v-for="link in tenantEventInvites" :key="link.id" class="p-3 flex items-center justify-between text-xs gap-3 hover:bg-slate-50 transition">
+                      <div class="min-w-0">
+                        <span class="font-bold text-slate-800">{{ link.referrer_name }}</span>
+                        <span class="text-slate-400 text-[11px] ml-1.5 font-mono">#{{ link.token }}</span>
+                      </div>
+                      <div class="flex items-center gap-3 shrink-0">
+                        <span class="text-[11px] text-slate-500 font-semibold">{{ link.total_registered || 0 }} khách đã đăng ký</span>
+                        <button type="button" @click="copyTenantInviteLink(link.invite_url)" class="text-primary-600 font-bold hover:underline text-[11px] cursor-pointer">
+                          Sao chép
+                        </button>
+                        <button type="button" @click="shareTenantInviteLink(link.invite_url)" class="text-slate-600 font-semibold hover:text-slate-900 text-[11px] cursor-pointer">
+                          Chia sẻ
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </section>
+            </template>
+
+            <!-- ========================================== -->
+            <!-- 3. TAB: KHÁCH MỜI (ATTENDEES) -->
+            <!-- ========================================== -->
+            <template v-else-if="activePanel === 'attendees'">
+              <div class="page-heading event-heading">
+                <div>
+                  <span class="eyebrow">QUẢN LÝ THAM DỰ</span>
+                  <h1>Danh sách khách mời ({{ attendees.length }})</h1>
+                  <p>Tra cứu thông tin, duyệt vé và theo dõi trạng thái check-in của từng khách.</p>
+                </div>
+                <div class="event-picker-wrap">
+                  <CalendarDays :size="17" />
+                  <select
+                    :value="selectedEvent.id"
+                    @change="loadEventDetails(events.find((event) => event.id === Number(($event.target as HTMLSelectElement).value)))"
+                  >
+                    <option v-for="event in events" :key="event.id" :value="event.id">{{ event.name }}</option>
+                  </select>
+                  <ChevronDown :size="15" />
+                </div>
+              </div>
+
+              <section class="surface-card attendee-card">
+                <div class="surface-heading space-y-3">
+                  <div class="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3 w-full">
+                    <div class="search-box flex-1">
+                      <Search :size="16" />
+                      <input v-model="search" placeholder="Tìm theo tên, số điện thoại, mã vé..." />
+                    </div>
+                    <button class="secondary-button shrink-0" @click="exportAttendees">
+                      <ArrowDownToLine :size="16" />Xuất Excel/CSV
+                    </button>
+                  </div>
+
+                  <!-- TABS LỌC TRẠNG THÁI TOUCH-FRIENDLY CHO MOBILE -->
+                  <div class="flex items-center gap-1.5 overflow-x-auto pb-1 scrollbar-none text-xs w-full">
+                    <button
+                      type="button"
+                      @click="attendeeFilter = 'ALL'"
+                      class="px-3 py-1.5 rounded-full font-bold transition whitespace-nowrap cursor-pointer shrink-0"
+                      :class="attendeeFilter === 'ALL' ? 'bg-primary-700 text-white shadow-xs' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'"
                     >
-                      <td><b>{{ attendee.full_name }}</b><small>{{ attendee.email }} · {{ attendee.phone }}</small></td>
-                      <td>{{ attendee.referrer_name || '—' }}</td>
-                      <td>
-                        <span class="status-pill" :class="attendee.registration_status === 'APPROVED' ? 'status-green' : attendee.registration_status === 'REJECTED' ? 'status-gray' : 'status-amber'">
+                      Tất cả ({{ attendees.length }})
+                    </button>
+
+                    <button
+                      type="button"
+                      @click="attendeeFilter = 'PENDING'"
+                      class="px-3 py-1.5 rounded-full font-bold transition whitespace-nowrap cursor-pointer shrink-0"
+                      :class="attendeeFilter === 'PENDING' ? 'bg-amber-500 text-white shadow-xs' : 'bg-amber-50 text-amber-700 border border-amber-200'"
+                    >
+                      Chờ duyệt ({{ pendingCount }})
+                    </button>
+
+                    <button
+                      type="button"
+                      @click="attendeeFilter = 'APPROVED'"
+                      class="px-3 py-1.5 rounded-full font-bold transition whitespace-nowrap cursor-pointer shrink-0"
+                      :class="attendeeFilter === 'APPROVED' ? 'bg-emerald-600 text-white shadow-xs' : 'bg-emerald-50 text-emerald-700 border border-emerald-200'"
+                    >
+                      Đã duyệt vé ({{ approvedCount }})
+                    </button>
+
+                    <button
+                      type="button"
+                      @click="attendeeFilter = 'USED'"
+                      class="px-3 py-1.5 rounded-full font-bold transition whitespace-nowrap cursor-pointer shrink-0"
+                      :class="attendeeFilter === 'USED' ? 'bg-indigo-600 text-white shadow-xs' : 'bg-indigo-50 text-indigo-700 border border-indigo-200'"
+                    >
+                      Đã vào cổng ({{ checkedInCount }})
+                    </button>
+                  </div>
+                </div>
+
+                <div v-if="!filteredAttendees.length" class="empty-state compact py-10">
+                  <Users :size="28" />
+                  <span>Không tìm thấy khách mời phù hợp với bộ lọc.</span>
+                </div>
+                <div v-else>
+                  <!-- Giao diện Mobile cho Khách Mời (Thẻ Cards hiện đại) -->
+                  <div class="sm:hidden divide-y divide-slate-100 p-2 space-y-2">
+                    <div
+                      v-for="attendee in filteredAttendees"
+                      :key="attendee.registration_id"
+                      class="p-3.5 space-y-2.5 bg-white rounded-2xl border border-slate-200 shadow-2xs"
+                    >
+                      <div class="flex items-start justify-between gap-2">
+                        <div>
+                          <b class="text-sm font-bold text-slate-900 block">{{ attendee.full_name }}</b>
+                          <span class="text-xs text-slate-500 font-mono">{{ attendee.phone || attendee.email }}</span>
+                        </div>
+                        <span
+                          class="status-pill text-[10px]"
+                          :class="attendee.registration_status === 'APPROVED' ? 'status-green' : attendee.registration_status === 'REJECTED' ? 'status-gray' : 'status-amber'"
+                        >
                           {{ attendee.registration_status === 'APPROVED' ? 'Đã duyệt' : attendee.registration_status === 'REJECTED' ? 'Từ chối' : attendee.registration_status === 'PENDING_ADMIN' ? 'Chờ BTC duyệt' : 'Đang chờ' }}
                         </span>
-                      </td>
-                      <td><code>{{ attendee.ticket_code || 'Chưa phát hành' }}</code></td>
-                      <td>
-                        <span v-if="attendee.ticket_status === 'USED'" class="checked-state"><Check :size="14" />Đã vào cổng</span>
-                        <span v-else class="muted">Chưa check-in</span>
-                      </td>
-                      <td>
-                        <div class="flex items-center gap-1.5">
-                          <button
-                            type="button"
-                            class="px-2 py-1 rounded-md bg-amber-50 text-amber-800 border border-amber-200 font-bold text-[10px] hover:bg-amber-100 flex items-center gap-1 cursor-pointer"
-                            title="Tạo thiệp VIP gửi khách này"
-                            @click="openAdminInviteCard(attendee)"
-                          >
-                            <Sparkles :size="11" class="text-amber-600" />
-                            <span>Thiệp VIP</span>
-                          </button>
-                          <template v-if="attendee.registration_status === 'PENDING' || attendee.registration_status === 'PENDING_ADMIN'">
-                            <button
-                              type="button"
-                              class="px-2.5 py-1 rounded-md bg-emerald-600 text-white font-bold text-[10px] hover:bg-emerald-700 cursor-pointer"
-                              @click="approveTenantAttendee(attendee.registration_id)"
-                            >
-                              Duyệt vé
-                            </button>
-                            <button
-                              type="button"
-                              class="px-2 py-1 rounded-md bg-rose-50 text-rose-600 border border-rose-200 font-bold text-[10px] hover:bg-rose-100 cursor-pointer"
-                              @click="rejectTenantAttendee(attendee)"
-                            >
-                              Từ chối
-                            </button>
-                          </template>
-                        </div>
-                      </td>
-                    </tr>
-                  </tbody>
-                </table>
+                      </div>
+
+                      <div class="flex items-center justify-between text-xs text-slate-600 bg-slate-50 p-2 rounded-xl">
+                        <span>Mã vé: <code class="font-mono font-bold text-primary-700">{{ attendee.ticket_code || 'Chưa có' }}</code></span>
+                        <span v-if="attendee.ticket_status === 'USED'" class="text-indigo-600 font-bold text-[11px] flex items-center gap-1">
+                          <Check :size="12" /> Đã vào cổng
+                        </span>
+                        <span v-else class="text-slate-400 text-[11px]">Chưa check-in</span>
+                      </div>
+
+                      <div class="flex items-center justify-end gap-1.5 pt-1 border-t border-slate-100">
+                        <button
+                          type="button"
+                          class="px-2.5 py-1.5 rounded-xl bg-amber-50 text-amber-800 border border-amber-200 font-bold text-xs flex items-center gap-1 cursor-pointer"
+                          title="Tạo thiệp VIP gửi khách này"
+                          @click="openAdminInviteCard(attendee)"
+                        >
+                          <Sparkles :size="12" class="text-amber-600" />
+                          <span>Thiệp VIP</span>
+                        </button>
+                        <button
+                          v-if="attendee.registration_status === 'PENDING' || attendee.registration_status === 'PENDING_ADMIN'"
+                          type="button"
+                          class="px-3 py-1.5 rounded-xl bg-rose-50 text-rose-600 border border-rose-200 font-bold text-xs cursor-pointer"
+                          @click="rejectTenantAttendee(attendee)"
+                        >
+                          Từ chối
+                        </button>
+                        <button
+                          v-if="attendee.registration_status === 'PENDING' || attendee.registration_status === 'PENDING_ADMIN'"
+                          type="button"
+                          class="px-3.5 py-1.5 rounded-xl bg-emerald-600 text-white font-bold text-xs cursor-pointer"
+                          @click="approveTenantAttendee(attendee.registration_id)"
+                        >
+                          Duyệt vé
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+
+                  <!-- Desktop Table -->
+                  <div class="hidden sm:block table-scroll">
+                    <table>
+                      <thead>
+                        <tr>
+                          <th>Khách mời</th>
+                          <th>Người giới thiệu</th>
+                          <th>Trạng thái đăng ký</th>
+                          <th>Vé QR</th>
+                          <th>Check-in</th>
+                          <th>Thao tác</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        <tr
+                          v-for="attendee in filteredAttendees"
+                          :key="attendee.registration_id"
+                        >
+                          <td><b>{{ attendee.full_name }}</b><small>{{ attendee.email }} · {{ attendee.phone }}</small></td>
+                          <td>{{ attendee.referrer_name || '—' }}</td>
+                          <td>
+                            <span class="status-pill" :class="attendee.registration_status === 'APPROVED' ? 'status-green' : attendee.registration_status === 'REJECTED' ? 'status-gray' : 'status-amber'">
+                              {{ attendee.registration_status === 'APPROVED' ? 'Đã duyệt' : attendee.registration_status === 'REJECTED' ? 'Từ chối' : attendee.registration_status === 'PENDING_ADMIN' ? 'Chờ BTC duyệt' : 'Đang chờ' }}
+                            </span>
+                          </td>
+                          <td><code>{{ attendee.ticket_code || 'Chưa phát hành' }}</code></td>
+                          <td>
+                            <span v-if="attendee.ticket_status === 'USED'" class="checked-state"><Check :size="14" />Đã vào cổng</span>
+                            <span v-else class="muted">Chưa check-in</span>
+                          </td>
+                          <td>
+                            <div class="flex items-center gap-1.5">
+                              <button
+                                type="button"
+                                class="px-2 py-1 rounded-md bg-amber-50 text-amber-800 border border-amber-200 font-bold text-[10px] hover:bg-amber-100 flex items-center gap-1 cursor-pointer"
+                                title="Tạo thiệp VIP gửi khách này"
+                                @click="openAdminInviteCard(attendee)"
+                              >
+                                <Sparkles :size="11" class="text-amber-600" />
+                                <span>Thiệp VIP</span>
+                              </button>
+                              <template v-if="attendee.registration_status === 'PENDING' || attendee.registration_status === 'PENDING_ADMIN'">
+                                <button
+                                  type="button"
+                                  class="px-2.5 py-1 rounded-md bg-emerald-600 text-white font-bold text-[10px] hover:bg-emerald-700 cursor-pointer"
+                                  @click="approveTenantAttendee(attendee.registration_id)"
+                                >
+                                  Duyệt vé
+                                </button>
+                                <button
+                                  type="button"
+                                  class="px-2 py-1 rounded-md bg-rose-50 text-rose-600 border border-rose-200 font-bold text-[10px] hover:bg-rose-100 cursor-pointer"
+                                  @click="rejectTenantAttendee(attendee)"
+                                >
+                                  Từ chối
+                                </button>
+                              </template>
+                            </div>
+                          </td>
+                        </tr>
+                      </tbody>
+                    </table>
+                  </div>
                 </div>
-              </div>
-              <button v-if="activePanel !== 'attendees' && attendees.length > 8" class="show-all" @click="activePanel = 'attendees'">
-                Xem toàn bộ {{ attendees.length }} khách mời <ArrowRight :size="15" />
-              </button>
-            </section>
+              </section>
+            </template>
           </template>
         </template>
       </div>
     </main>
 
     <!-- THANH ĐIỀU HƯỚNG DƯỚI CÙNG TRÊN MOBILE CHO BAN TỔ CHỨC (TENANT ADMIN) -->
-    <nav class="md:hidden fixed bottom-0 inset-x-0 z-40 bg-white/95 backdrop-blur-md border-t border-slate-200 flex items-center justify-around py-2 px-1 shadow-lg pb-safe">
+    <nav class="md:hidden fixed bottom-0 inset-x-0 z-40 bg-white/95 backdrop-blur-md border-t border-slate-200/90 flex items-center justify-around py-1.5 px-2 shadow-lg pb-safe">
       <button
         type="button"
         @click="activePanel = 'overview'"
-        class="flex flex-col items-center justify-center flex-1 py-1 gap-1 text-[10px] font-bold transition select-none cursor-pointer"
-        :class="activePanel === 'overview' ? 'text-primary-700 font-extrabold' : 'text-slate-500 hover:text-slate-800'"
+        class="flex flex-col items-center justify-center flex-1 py-1 px-1 rounded-xl transition cursor-pointer"
+        :class="activePanel === 'overview' ? 'text-primary-700 bg-primary-50/80 font-bold' : 'text-slate-500 hover:text-slate-800 font-medium'"
       >
-        <CalendarDays :size="17" />
-        <span>Tổng quan</span>
+        <CalendarDays :size="18" />
+        <span class="text-[10px] mt-0.5">Tổng quan</span>
       </button>
 
       <button
         type="button"
         @click="activePanel = 'invites'"
-        class="flex flex-col items-center justify-center flex-1 py-1 gap-1 text-[10px] font-bold transition select-none cursor-pointer"
-        :class="activePanel === 'invites' ? 'text-amber-600 font-extrabold' : 'text-slate-500 hover:text-slate-800'"
+        class="flex flex-col items-center justify-center flex-1 py-1 px-1 rounded-xl transition cursor-pointer"
+        :class="activePanel === 'invites' ? 'text-amber-700 bg-amber-50/80 font-bold' : 'text-slate-500 hover:text-slate-800 font-medium'"
       >
-        <Sparkles :size="17" />
-        <span>Thư mời</span>
+        <Sparkles :size="18" />
+        <span class="text-[10px] mt-0.5">Thư mời</span>
       </button>
 
       <button
         type="button"
         @click="activePanel = 'attendees'"
-        class="flex flex-col items-center justify-center flex-1 py-1 gap-1 text-[10px] font-bold transition select-none cursor-pointer relative"
-        :class="activePanel === 'attendees' ? 'text-primary-700 font-extrabold' : 'text-slate-500 hover:text-slate-800'"
+        class="flex flex-col items-center justify-center flex-1 py-1 px-1 rounded-xl transition cursor-pointer relative"
+        :class="activePanel === 'attendees' ? 'text-sky-700 bg-sky-50/80 font-bold' : 'text-slate-500 hover:text-slate-800 font-medium'"
       >
-        <Users :size="17" />
-        <span>Khách mời</span>
-        <span v-if="attendees.length" class="absolute top-0.5 right-2 px-1 py-0.2 bg-primary-600 text-white rounded-full text-[9px] font-mono leading-none">
+        <Users :size="18" />
+        <span class="text-[10px] mt-0.5">Khách mời</span>
+        <span v-if="attendees.length" class="absolute top-0 right-1.5 px-1 py-0.2 bg-primary-600 text-white rounded-full text-[9px] font-mono leading-none">
           {{ attendees.length }}
         </span>
       </button>
@@ -3839,21 +4099,21 @@ onBeforeUnmount(stopScanner);
       <button
         type="button"
         @click="stopScanner(); activePanel = 'team'"
-        class="flex flex-col items-center justify-center flex-1 py-1 gap-1 text-[10px] font-bold transition select-none cursor-pointer"
-        :class="activePanel === 'team' ? 'text-primary-700 font-extrabold' : 'text-slate-500 hover:text-slate-800'"
+        class="flex flex-col items-center justify-center flex-1 py-1 px-1 rounded-xl transition cursor-pointer"
+        :class="activePanel === 'team' ? 'text-purple-700 bg-purple-50/80 font-bold' : 'text-slate-500 hover:text-slate-800 font-medium'"
       >
-        <ShieldCheck :size="17" />
-        <span>Đội ngũ</span>
+        <ShieldCheck :size="18" />
+        <span class="text-[10px] mt-0.5">Đội ngũ</span>
       </button>
 
       <button
         type="button"
         @click="selectedScannerEventId = selectedEvent?.id || scannerEvents[0]?.id || null; activePanel = 'scanner'"
-        class="flex flex-col items-center justify-center flex-1 py-1 gap-1 text-[10px] font-bold transition select-none cursor-pointer"
-        :class="activePanel === 'scanner' ? 'text-emerald-700 font-extrabold' : 'text-slate-500 hover:text-slate-800'"
+        class="flex flex-col items-center justify-center flex-1 py-1 px-1 rounded-xl transition cursor-pointer"
+        :class="activePanel === 'scanner' ? 'text-emerald-700 bg-emerald-50/80 font-bold' : 'text-slate-500 hover:text-slate-800 font-medium'"
       >
-        <Camera :size="17" />
-        <span>Soát vé</span>
+        <Camera :size="18" />
+        <span class="text-[10px] mt-0.5">Soát vé</span>
       </button>
     </nav>
 
