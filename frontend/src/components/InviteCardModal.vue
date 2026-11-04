@@ -143,7 +143,7 @@ const defaultOverlayConfig = () => ({
   // Guest Name
   showName: true,
   showSalutation: true,
-  salutationText: 'Trân trọng kính mời Quý Khách:',
+  salutationText: 'Trân trọng Kính mời Quý Khách tham dự',
   nameX: 50,
   nameY: 46,
   nameFontSize: 54,
@@ -254,6 +254,9 @@ const applyTemplateRecord = async (item: SavedTemplateItem) => {
   customTemplateName.value = item.name || 'Mẫu Phôi Canva';
   if (item.config) {
     Object.assign(overlayConfig, defaultOverlayConfig(), item.config);
+    if (!overlayConfig.salutationText || overlayConfig.salutationText === 'Trân trọng kính mời Quý Khách:') {
+      overlayConfig.salutationText = 'Trân trọng Kính mời Quý Khách tham dự';
+    }
   }
   if (item.templateUrl) {
     customTemplateUrl.value = item.templateUrl;
@@ -1321,14 +1324,15 @@ const generateCard = async () => {
   // 7. Attendee Honor Name
   ctx.fillStyle = textSub;
   ctx.font = 'italic 25px "Be Vietnam Pro", sans-serif';
-  ctx.fillText('Trân trọng kính mời Quý Khách:', width / 2, 730);
+  const salutation = overlayConfig.salutationText || 'Trân trọng Kính mời Quý Khách tham dự';
+  ctx.fillText(salutation, width / 2, 730);
 
   ctx.fillStyle = textHeading;
   fitAndDrawText(ctx, attendeeName.value || 'Quý Khách Mời VIP', width / 2, 795, 840, 56, 34, 'bold');
 
   ctx.fillStyle = textMuted;
   ctx.font = '500 24px "Be Vietnam Pro", sans-serif';
-  ctx.fillText('Tới tham dự sự kiện chính thức & dạ tiệc kết nối', width / 2, 850);
+  ctx.fillText('Sự kiện chính thức & dạ tiệc kết nối', width / 2, 850);
 
   // 8. Event Details Glassmorphic Card
   const infoCardY = 895;
@@ -1446,13 +1450,13 @@ const shareCard = async () => {
     if (navigator.canShare && navigator.canShare({ files: [file] })) {
       await navigator.share({
         title: `Thư mời VIP: ${eventName.value}`,
-        text: `Trân trọng kính mời ${attendeeName.value || 'Quý khách'} tham dự ${eventName.value}!`,
+        text: `Trân trọng Kính mời ${attendeeName.value || 'Quý Khách'} tham dự ${eventName.value}!`,
         files: [file],
       });
     } else if (navigator.share) {
       await navigator.share({
         title: `Thư mời VIP: ${eventName.value}`,
-        text: `Trân trọng kính mời ${attendeeName.value || 'Quý khách'} tham dự ${eventName.value}!`,
+        text: `Trân trọng Kính mời ${attendeeName.value || 'Quý Khách'} tham dự ${eventName.value}!`,
         url: window.location.href,
       });
     } else {
@@ -1988,8 +1992,18 @@ onBeforeUnmount(() => {
                     </div>
                     <label class="inline-flex items-center gap-1.5 text-xs font-semibold text-slate-700 cursor-pointer">
                       <input type="checkbox" v-model="overlayConfig.showSalutation" @change="generateCard" class="rounded text-indigo-600" />
-                      <span>Hiện "Trân trọng kính mời"</span>
+                      <span>Hiện dòng đầu thiệp</span>
                     </label>
+                  </div>
+
+                  <div v-if="overlayConfig.showSalutation" class="pt-1.5">
+                    <label class="block text-[11px] font-semibold text-slate-600 mb-1">Dòng chữ đầu thiệp</label>
+                    <input
+                      v-model="overlayConfig.salutationText"
+                      @input="generateCard"
+                      placeholder="Trân trọng Kính mời Quý Khách tham dự"
+                      class="input w-full py-1.5 px-3 text-xs"
+                    />
                   </div>
                 </div>
 
@@ -2093,25 +2107,37 @@ onBeforeUnmount(() => {
                   <span>Thông tin khách mời</span>
                 </div>
 
-                <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div class="space-y-3">
                   <div>
-                    <label class="block text-xs font-semibold text-slate-700 mb-1">Họ và tên khách mời</label>
+                    <label class="block text-xs font-semibold text-slate-700 mb-1">Dòng chữ đầu thiệp</label>
                     <input
-                      v-model="attendeeName"
+                      v-model="overlayConfig.salutationText"
                       @input="generateCard"
-                      placeholder="Nhập tên khách mời"
-                      class="input w-full py-1.5 px-3 text-xs font-bold"
+                      placeholder="Trân trọng Kính mời Quý Khách tham dự"
+                      class="input w-full py-1.5 px-3 text-xs"
                     />
                   </div>
 
-                  <div>
-                    <label class="block text-xs font-semibold text-slate-700 mb-1">Danh xưng / Chức vụ</label>
-                    <input
-                      v-model="attendeeRole"
-                      @input="generateCard"
-                      placeholder="Ví dụ: Khách Mời Danh Dự (VIP)"
-                      class="input w-full py-1.5 px-3 text-xs"
-                    />
+                  <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    <div>
+                      <label class="block text-xs font-semibold text-slate-700 mb-1">Họ và tên khách mời</label>
+                      <input
+                        v-model="attendeeName"
+                        @input="generateCard"
+                        placeholder="Nhập tên khách mời"
+                        class="input w-full py-1.5 px-3 text-xs font-bold"
+                      />
+                    </div>
+
+                    <div>
+                      <label class="block text-xs font-semibold text-slate-700 mb-1">Danh xưng / Chức vụ</label>
+                      <input
+                        v-model="attendeeRole"
+                        @input="generateCard"
+                        placeholder="Ví dụ: Khách Mời Danh Dự (VIP)"
+                        class="input w-full py-1.5 px-3 text-xs"
+                      />
+                    </div>
                   </div>
                 </div>
 
