@@ -21,7 +21,9 @@ import {
   Trash2,
   Move,
   Palette,
-  User
+  User,
+  Eye,
+  Share2
 } from 'lucide-vue-next';
 
 const props = defineProps<{
@@ -87,6 +89,50 @@ const activeSavedTemplateId = ref<string | null>(null);
 const customTemplateName = ref<string>('Mẫu Phôi Canva #1');
 const isDraggingPreview = ref(false);
 const previewContainerRef = ref<HTMLElement | null>(null);
+
+// Mobile View Mode: 'preview' (xem thiệp) | 'edit' (tùy chỉnh & mẫu)
+const mobileViewMode = ref<'preview' | 'edit'>('preview');
+const nudgeStep = ref<number>(2);
+
+const activeAdjustTabName = computed(() => {
+  switch (activeAdjustTab.value) {
+    case 'qr': return 'Mã QR';
+    case 'name': return 'Tên khách mời';
+    case 'role': return 'Chức vụ / Danh xưng';
+    case 'avatar': return 'Ảnh chân dung';
+    default: return '';
+  }
+});
+
+const nudge = (dx: number, dy: number) => {
+  if (activeAdjustTab.value === 'qr') {
+    overlayConfig.qrX = Math.max(5, Math.min(95, overlayConfig.qrX + dx));
+    overlayConfig.qrY = Math.max(5, Math.min(95, overlayConfig.qrY + dy));
+  } else if (activeAdjustTab.value === 'name') {
+    overlayConfig.nameX = Math.max(5, Math.min(95, overlayConfig.nameX + dx));
+    overlayConfig.nameY = Math.max(5, Math.min(95, overlayConfig.nameY + dy));
+  } else if (activeAdjustTab.value === 'role') {
+    overlayConfig.roleX = Math.max(5, Math.min(95, overlayConfig.roleX + dx));
+    overlayConfig.roleY = Math.max(5, Math.min(95, overlayConfig.roleY + dy));
+  } else if (activeAdjustTab.value === 'avatar') {
+    overlayConfig.avatarX = Math.max(5, Math.min(95, overlayConfig.avatarX + dx));
+    overlayConfig.avatarY = Math.max(5, Math.min(95, overlayConfig.avatarY + dy));
+  }
+  generateCard();
+};
+
+const centerActiveLayer = () => {
+  if (activeAdjustTab.value === 'qr') {
+    overlayConfig.qrX = 50;
+  } else if (activeAdjustTab.value === 'name') {
+    overlayConfig.nameX = 50;
+  } else if (activeAdjustTab.value === 'role') {
+    overlayConfig.roleX = 50;
+  } else if (activeAdjustTab.value === 'avatar') {
+    overlayConfig.avatarX = 50;
+  }
+  generateCard();
+};
 
 const defaultOverlayConfig = () => ({
   // QR Code
@@ -1390,6 +1436,42 @@ const downloadCard = () => {
   a.click();
 };
 
+const sharingCard = ref(false);
+
+const shareCard = async () => {
+  if (!previewDataUrl.value) return;
+  sharingCard.value = true;
+  try {
+    const res = await fetch(previewDataUrl.value);
+    const blob = await res.blob();
+    const safeName = (attendeeName.value || 'VIP').replace(/[^a-zA-Z0-9\u00C0-\u1EF9]/g, '_');
+    const file = new File([blob], `Thiep_Moi_VIP_${safeName}.png`, { type: 'image/png' });
+
+    if (navigator.canShare && navigator.canShare({ files: [file] })) {
+      await navigator.share({
+        title: `Thư mời VIP: ${eventName.value}`,
+        text: `Trân trọng kính mời ${attendeeName.value || 'Quý khách'} tham dự ${eventName.value}!`,
+        files: [file],
+      });
+    } else if (navigator.share) {
+      await navigator.share({
+        title: `Thư mời VIP: ${eventName.value}`,
+        text: `Trân trọng kính mời ${attendeeName.value || 'Quý khách'} tham dự ${eventName.value}!`,
+        url: window.location.href,
+      });
+    } else {
+      downloadCard();
+    }
+  } catch (err: any) {
+    if (err?.name !== 'AbortError') {
+      console.warn('Share not completed:', err);
+      downloadCard();
+    }
+  } finally {
+    sharingCard.value = false;
+  }
+};
+
 watch(
   () => props.show,
   async (val) => {
@@ -1427,7 +1509,7 @@ onBeforeUnmount(() => {
     class="fixed inset-0 bg-slate-950/85 backdrop-blur-md z-[120] flex items-center justify-center p-2 sm:p-4 md:p-6 overflow-y-auto"
   >
     <div
-      class="bg-white rounded-2xl sm:rounded-3xl max-w-5xl w-full shadow-2xl border border-slate-200/80 my-auto h-[95vh] md:h-[90vh] max-h-[860px] flex flex-col overflow-hidden animate-scale-in"
+      class="bg-white rounded-2xl sm:rounded-3xl max-w-5xl w-full shadow-2xl border border-slate-200/80 my-auto h-[92dvh] sm:h-[90vh] max-h-[860px] flex flex-col overflow-hidden animate-scale-in"
     >
       <!-- Header (shrink-0) -->
       <div class="flex items-center justify-between gap-3 px-4 sm:px-6 py-3 border-b border-slate-100 bg-white shrink-0">
@@ -1456,10 +1538,35 @@ onBeforeUnmount(() => {
       </div>
 
       <!-- Modal Body (flex-1 min-h-0 overflow-hidden) -->
-      <div class="p-3 sm:p-5 flex-1 min-h-0 grid grid-cols-1 md:grid-cols-12 gap-4 lg:gap-6 overflow-y-auto md:overflow-hidden overscroll-contain">
+      <div class="p-2.5 sm:p-5 flex-1 min-h-0 flex flex-col md:grid md:grid-cols-12 gap-3 md:gap-4 lg:gap-6 overflow-y-auto md:overflow-hidden overscroll-contain">
         
+        <!-- Mobile Segmented View Switcher (md:hidden) -->
+        <div class="md:hidden flex items-center bg-slate-100 p-1 rounded-2xl shrink-0 gap-1 shadow-2xs">
+          <button
+            type="button"
+            @click="mobileViewMode = 'preview'"
+            class="flex-1 py-2 px-3 rounded-xl text-xs font-bold transition flex items-center justify-center gap-1.5 cursor-pointer"
+            :class="mobileViewMode === 'preview' ? 'bg-primary-700 text-white shadow-xs' : 'text-slate-600 hover:text-slate-900'"
+          >
+            <Eye class="w-4 h-4" />
+            <span>1. Xem thiệp mời VIP</span>
+          </button>
+          <button
+            type="button"
+            @click="mobileViewMode = 'edit'"
+            class="flex-1 py-2 px-3 rounded-xl text-xs font-bold transition flex items-center justify-center gap-1.5 cursor-pointer"
+            :class="mobileViewMode === 'edit' ? 'bg-primary-700 text-white shadow-xs' : 'text-slate-600 hover:text-slate-900'"
+          >
+            <Sliders class="w-4 h-4" />
+            <span>2. Tùy chỉnh & Mẫu thiệp</span>
+          </button>
+        </div>
+
         <!-- Col 1: Form Customization (md:col-span-7) -->
-        <div class="order-2 md:order-1 md:col-span-7 md:h-full md:min-h-0 flex flex-col md:overflow-hidden space-y-0 text-sm">
+        <div
+          class="md:col-span-7 md:h-full md:min-h-0 flex flex-col md:overflow-hidden space-y-0 text-sm"
+          :class="mobileViewMode === 'edit' ? 'flex flex-1 min-h-0' : 'hidden md:flex'"
+        >
           
           <!-- Top Tab Switcher (shrink-0) -->
           <div class="grid grid-cols-3 gap-1 bg-slate-100 p-1 rounded-xl mb-3 shrink-0 text-xs font-bold">
@@ -1760,6 +1867,67 @@ onBeforeUnmount(() => {
                   >
                     🖼️ Avatar
                   </button>
+                </div>
+
+                <!-- DIRECTIONAL NUDGE KEYPAD FOR MOBILE & FAST DESKTOP POSITIONING -->
+                <div class="bg-indigo-50/60 border border-indigo-100 p-2.5 rounded-xl space-y-2">
+                  <div class="flex items-center justify-between text-xs font-bold text-slate-700">
+                    <span class="flex items-center gap-1 text-indigo-900">
+                      <Move class="w-3.5 h-3.5 text-indigo-600" />
+                      <span>Phím di chuyển: <strong class="text-indigo-700">{{ activeAdjustTabName }}</strong></span>
+                    </span>
+                    <div class="flex items-center gap-1">
+                      <span class="text-[10px] text-slate-400">Bước nhảy:</span>
+                      <button
+                        v-for="s in [1, 2, 5]"
+                        :key="s"
+                        type="button"
+                        @click="nudgeStep = s"
+                        :class="nudgeStep === s ? 'bg-indigo-700 text-white font-black' : 'bg-white text-slate-600 border border-slate-200'"
+                        class="px-1.5 py-0.5 rounded text-[10px] font-bold cursor-pointer"
+                      >
+                        {{ s }}%
+                      </button>
+                    </div>
+                  </div>
+
+                  <div class="grid grid-cols-5 gap-1.5">
+                    <button
+                      type="button"
+                      @click="nudge(-nudgeStep, 0)"
+                      class="py-2 px-1 rounded-lg bg-white hover:bg-slate-50 border border-slate-200 text-slate-800 text-xs font-bold flex items-center justify-center gap-1 cursor-pointer active:scale-95 transition shadow-2xs"
+                    >
+                      ◀ Trái
+                    </button>
+                    <button
+                      type="button"
+                      @click="nudge(0, -nudgeStep)"
+                      class="py-2 px-1 rounded-lg bg-white hover:bg-slate-50 border border-slate-200 text-slate-800 text-xs font-bold flex items-center justify-center gap-1 cursor-pointer active:scale-95 transition shadow-2xs"
+                    >
+                      ▲ Lên
+                    </button>
+                    <button
+                      type="button"
+                      @click="centerActiveLayer"
+                      class="py-2 px-1 rounded-lg bg-indigo-100 hover:bg-indigo-200 text-indigo-900 text-xs font-bold flex items-center justify-center gap-1 cursor-pointer active:scale-95 transition shadow-2xs"
+                    >
+                      ⊙ Giữa
+                    </button>
+                    <button
+                      type="button"
+                      @click="nudge(0, nudgeStep)"
+                      class="py-2 px-1 rounded-lg bg-white hover:bg-slate-50 border border-slate-200 text-slate-800 text-xs font-bold flex items-center justify-center gap-1 cursor-pointer active:scale-95 transition shadow-2xs"
+                    >
+                      ▼ Xuống
+                    </button>
+                    <button
+                      type="button"
+                      @click="nudge(nudgeStep, 0)"
+                      class="py-2 px-1 rounded-lg bg-white hover:bg-slate-50 border border-slate-200 text-slate-800 text-xs font-bold flex items-center justify-center gap-1 cursor-pointer active:scale-95 transition shadow-2xs"
+                    >
+                      ▶ Phải
+                    </button>
+                  </div>
                 </div>
 
                 <!-- Active Tab Sliders -->
@@ -2076,11 +2244,24 @@ onBeforeUnmount(() => {
             </div>
 
           </div>
+
+          <!-- Mobile Return to Preview Button (md:hidden) -->
+          <div class="md:hidden pt-2.5 mt-auto border-t border-slate-100 shrink-0">
+            <button
+              type="button"
+              @click="mobileViewMode = 'preview'"
+              class="w-full py-2.5 px-4 rounded-xl bg-primary-700 hover:bg-primary-800 text-white font-bold text-xs flex items-center justify-center gap-2 shadow-xs cursor-pointer active:scale-98 transition"
+            >
+              <Eye class="w-4 h-4" />
+              <span>Xem kết quả thiệp mời</span>
+            </button>
+          </div>
         </div>
 
         <!-- Col 2: Live Canvas Preview & Quick Export (md:col-span-5) -->
         <div
-          class="order-1 md:order-2 md:col-span-5 md:h-full md:min-h-0 flex flex-col justify-between items-center bg-slate-900 text-white p-3 sm:p-4 rounded-2xl border border-slate-800 shadow-inner overflow-hidden space-y-2.5"
+          class="md:col-span-5 md:h-full md:min-h-0 flex flex-col justify-between items-center bg-slate-900 text-white p-2.5 sm:p-4 rounded-2xl border border-slate-800 shadow-inner overflow-hidden space-y-2.5"
+          :class="mobileViewMode === 'preview' ? 'flex flex-1 min-h-0' : 'hidden md:flex'"
         >
           <!-- Top Preview Bar (shrink-0) -->
           <div class="flex items-center justify-between w-full px-1 text-slate-400 text-xs shrink-0">
@@ -2147,8 +2328,8 @@ onBeforeUnmount(() => {
               @pointermove="onPreviewPointerMove"
               @pointerup="onPreviewPointerUp"
               @pointercancel="onPreviewPointerUp"
-              :class="selectedTheme === 'custom-template' ? 'cursor-crosshair touch-none' : ''"
-              class="relative h-full max-h-[440px] sm:max-h-[480px] w-auto aspect-[9/16] rounded-2xl overflow-hidden shadow-2xl border-2 border-amber-500/30 bg-slate-950 flex items-center justify-center group select-none"
+              :class="[selectedTheme === 'custom-template' ? 'cursor-crosshair' : '', isDraggingPreview ? 'touch-none' : 'touch-pan-y']"
+              class="relative h-full max-h-[44dvh] sm:max-h-[480px] w-auto aspect-[9/16] rounded-2xl overflow-hidden shadow-2xl border-2 border-amber-500/30 bg-slate-950 flex items-center justify-center group select-none"
               :style="{ aspectRatio: `1080 / ${customAspectHeight}` }"
             >
               <!-- Hidden high-res canvas -->
@@ -2177,8 +2358,38 @@ onBeforeUnmount(() => {
             </div>
           </div>
 
+          <!-- Mobile Quick Action Buttons (md:hidden) -->
+          <div class="md:hidden w-full grid grid-cols-3 gap-2 shrink-0 pt-1">
+            <button
+              type="button"
+              @click="mobileViewMode = 'edit'"
+              class="py-2.5 px-2 rounded-xl bg-slate-800 hover:bg-slate-700 border border-slate-700 text-white text-xs font-bold flex items-center justify-center gap-1.5 transition cursor-pointer"
+            >
+              <Sliders class="w-3.5 h-3.5 text-amber-400" />
+              <span>Sửa mẫu</span>
+            </button>
+            <button
+              type="button"
+              @click="downloadCard"
+              :disabled="isGenerating || !previewDataUrl"
+              class="py-2.5 px-2 rounded-xl bg-primary-600 hover:bg-primary-700 text-white text-xs font-bold flex items-center justify-center gap-1.5 transition cursor-pointer shadow-xs"
+            >
+              <Download class="w-3.5 h-3.5" />
+              <span>Tải PNG</span>
+            </button>
+            <button
+              type="button"
+              @click="shareCard"
+              :disabled="isGenerating || !previewDataUrl"
+              class="py-2.5 px-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold flex items-center justify-center gap-1.5 transition cursor-pointer shadow-xs"
+            >
+              <Share2 class="w-3.5 h-3.5" />
+              <span>Chia sẻ</span>
+            </button>
+          </div>
+
           <!-- Hint footer for preview (shrink-0) -->
-          <div class="text-[11px] text-slate-400 text-center shrink-0 w-full">
+          <div class="text-[11px] text-slate-400 text-center shrink-0 w-full hidden sm:block">
             <span v-if="selectedTheme === 'custom-template'" class="text-amber-300">
               ✦ Chạm & kéo trực tiếp trên ảnh để đổi vị trí nhanh
             </span>
@@ -2191,27 +2402,37 @@ onBeforeUnmount(() => {
       </div>
 
       <!-- Modal Footer (shrink-0) -->
-      <div class="flex items-center justify-between border-t border-slate-200 bg-white px-4 py-3 pb-safe sm:px-5 shrink-0">
+      <div class="flex items-center justify-between border-t border-slate-200 bg-white px-3 sm:px-5 py-3 pb-safe shrink-0">
         <div class="hidden sm:flex items-center gap-2 text-xs text-slate-500">
           <span class="inline-block w-2 h-2 rounded-full bg-emerald-500"></span>
           <span>Đang dùng: <strong class="text-slate-800">{{ selectedThemeName }}</strong></span>
         </div>
-        <div class="flex items-center gap-2.5 w-full sm:w-auto justify-end">
+        <div class="flex items-center gap-2 w-full sm:w-auto justify-end">
           <button
             type="button"
             @click="emit('close')"
-            class="btn btn-secondary px-4 text-xs font-semibold cursor-pointer"
+            class="btn btn-secondary px-3.5 text-xs font-semibold cursor-pointer"
           >
             Đóng
           </button>
           <button
             type="button"
+            @click="shareCard"
+            :disabled="isGenerating || !previewDataUrl"
+            class="btn bg-emerald-600 hover:bg-emerald-700 text-white px-3.5 text-xs font-bold flex items-center gap-1.5 cursor-pointer shadow-xs"
+            title="Chia sẻ thiệp qua Zalo, Messenger, SMS"
+          >
+            <Share2 class="h-4 w-4" />
+            <span class="hidden sm:inline">Chia sẻ</span>
+          </button>
+          <button
+            type="button"
             @click="downloadCard"
             :disabled="isGenerating || !previewDataUrl"
-            class="btn btn-primary px-5 text-xs font-bold shadow-md shadow-primary-500/20 cursor-pointer"
+            class="btn btn-primary px-4 text-xs font-bold shadow-md shadow-primary-500/20 cursor-pointer"
           >
             <Download class="h-4 w-4" />
-            <span>{{ isGenerating ? 'Đang tạo thiệp…' : 'Tải thiệp PNG' }}</span>
+            <span>{{ isGenerating ? 'Đang tạo…' : 'Tải thiệp PNG' }}</span>
           </button>
         </div>
       </div>
@@ -2236,7 +2457,14 @@ onBeforeUnmount(() => {
           alt="Xem trước thiệp mời kích thước lớn"
           class="w-full max-h-[85vh] object-contain rounded-2xl shadow-2xl border border-amber-500/40"
         />
-        <div class="mt-3 flex items-center gap-3">
+        <div class="mt-3 flex items-center gap-2.5">
+          <button
+            @click="shareCard"
+            class="btn bg-emerald-600 hover:bg-emerald-700 text-white text-xs px-4 py-2 font-bold flex items-center gap-2 cursor-pointer shadow-xs"
+          >
+            <Share2 class="w-4 h-4" />
+            <span>Chia sẻ thiệp</span>
+          </button>
           <button
             @click="downloadCard"
             class="btn btn-primary text-xs px-4 py-2 font-bold flex items-center gap-2 cursor-pointer"

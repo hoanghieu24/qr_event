@@ -966,9 +966,18 @@ const loadStaffInviteDetails = async (eventId: number) => {
       }
     }
 
+    if (!link && eventId) {
+      link = {
+        event_id: eventId,
+        invite_url: `${window.location.origin}/invite/event_${eventId}`,
+        token: `event_${eventId}`,
+        status: 'ACTIVE'
+      };
+    }
+
     if (link) {
       const origin = window.location.origin;
-      link.invite_url = link.token ? `${origin}/invite/${link.token}` : (link.invite_url || link.url || '');
+      link.invite_url = link.token ? `${origin}/invite/${link.token}` : (link.invite_url || link.url || `${origin}/invite/event_${eventId}`);
     }
 
     staffInviteLink.value = link || null;
@@ -982,6 +991,13 @@ const loadStaffInviteDetails = async (eventId: number) => {
     }
   } catch (e) {
     console.error('loadStaffInviteDetails error:', e);
+    if (eventId && !staffInviteLink.value) {
+      const fallbackUrl = `${window.location.origin}/invite/event_${eventId}`;
+      staffInviteLink.value = { event_id: eventId, invite_url: fallbackUrl, token: `event_${eventId}`, status: 'ACTIVE' };
+      try {
+        staffInviteQrUrl.value = await QRCode.toDataURL(fallbackUrl, { width: 300, margin: 2 });
+      } catch (_) {}
+    }
   }
 };
 
@@ -1892,7 +1908,7 @@ onBeforeUnmount(stopScanner);
     </div>
   </div>
 
-  <div v-else-if="user?.type === 'STAFF'" class="min-h-screen bg-slate-50 text-slate-800 font-sans pb-16">
+  <div v-else-if="user?.type === 'STAFF'" class="min-h-screen bg-slate-50 text-slate-800 font-sans pb-24 md:pb-16">
     <!-- Topbar -->
     <header class="sticky top-0 z-40 bg-white border-b border-slate-200 px-3 sm:px-8 h-16 flex items-center justify-between gap-2 shadow-xs">
       <div class="flex items-center gap-2 shrink-0">
@@ -1905,15 +1921,18 @@ onBeforeUnmount(stopScanner);
           <span class="text-[10px] font-bold uppercase tracking-wider text-primary-700">Không gian Nhân sự Sự kiện</span>
           <b class="text-xs text-slate-800 truncate max-w-[220px]">{{ staffSelectedEvent?.name || user?.tenant_name || 'Đội ngũ sự kiện' }}</b>
         </div>
+        <span class="sm:hidden text-xs font-bold text-slate-800 truncate max-w-[150px]">
+          {{ staffSelectedEvent?.name || 'Sự kiện' }}
+        </span>
       </div>
 
-      <!-- Tab Switcher (Mời khách / Duyệt khách / Quét QR / Báo cáo / Tranh chấp) -->
-      <div class="flex items-center gap-0.5 sm:gap-1 bg-slate-100 p-1 rounded-xl border border-slate-200/80 max-w-[calc(100vw-125px)] sm:max-w-none overflow-x-auto no-scrollbar">
+      <!-- Tab Switcher on Desktop (Mời khách / Duyệt khách / Quét QR / Báo cáo / Tranh chấp) -->
+      <div class="hidden md:flex items-center gap-1 bg-slate-100 p-1 rounded-xl border border-slate-200/80">
         <button
           v-if="staffCanInvite"
           type="button"
           @click="staffTab = 'invite'"
-          class="flex items-center gap-1 px-2 sm:px-3 py-1.5 rounded-lg text-[11px] sm:text-xs font-bold whitespace-nowrap transition select-none cursor-pointer"
+          class="flex items-center gap-1 px-3 py-1.5 rounded-lg text-xs font-bold whitespace-nowrap transition select-none cursor-pointer"
           :class="staffTab === 'invite' ? 'bg-white text-primary-700 shadow-xs' : 'text-slate-600 hover:text-slate-900'"
         >
           <Users :size="13" />
@@ -1923,7 +1942,7 @@ onBeforeUnmount(stopScanner);
           v-if="staffCanApprove"
           type="button"
           @click="staffTab = 'approve'"
-          class="flex items-center gap-1 px-2 sm:px-3 py-1.5 rounded-lg text-[11px] sm:text-xs font-bold whitespace-nowrap transition select-none cursor-pointer"
+          class="flex items-center gap-1 px-3 py-1.5 rounded-lg text-xs font-bold whitespace-nowrap transition select-none cursor-pointer"
           :class="staffTab === 'approve' ? 'bg-white text-emerald-700 shadow-xs' : 'text-slate-600 hover:text-slate-900'"
         >
           <UserCheck :size="13" />
@@ -1936,7 +1955,7 @@ onBeforeUnmount(stopScanner);
           v-if="staffCanScan"
           type="button"
           @click="staffTab = 'scan'"
-          class="flex items-center gap-1 px-2 sm:px-3 py-1.5 rounded-lg text-[11px] sm:text-xs font-bold whitespace-nowrap transition select-none cursor-pointer"
+          class="flex items-center gap-1 px-3 py-1.5 rounded-lg text-xs font-bold whitespace-nowrap transition select-none cursor-pointer"
           :class="staffTab === 'scan' ? 'bg-white text-primary-700 shadow-xs' : 'text-slate-600 hover:text-slate-900'"
         >
           <Camera :size="13" />
@@ -1946,7 +1965,7 @@ onBeforeUnmount(stopScanner);
           v-if="staffCanReport"
           type="button"
           @click="staffTab = 'report'"
-          class="flex items-center gap-1 px-2 sm:px-3 py-1.5 rounded-lg text-[11px] sm:text-xs font-bold whitespace-nowrap transition select-none cursor-pointer"
+          class="flex items-center gap-1 px-3 py-1.5 rounded-lg text-xs font-bold whitespace-nowrap transition select-none cursor-pointer"
           :class="staffTab === 'report' ? 'bg-white text-primary-700 shadow-xs' : 'text-slate-600 hover:text-slate-900'"
         >
           <BarChart3 :size="13" />
@@ -1956,7 +1975,7 @@ onBeforeUnmount(stopScanner);
           v-if="staffCanApprove || disputesList.length > 0"
           type="button"
           @click="loadDisputes(); staffTab = 'disputes'"
-          class="flex items-center gap-1 px-2 sm:px-3 py-1.5 rounded-lg text-[11px] sm:text-xs font-bold whitespace-nowrap transition select-none cursor-pointer"
+          class="flex items-center gap-1 px-3 py-1.5 rounded-lg text-xs font-bold whitespace-nowrap transition select-none cursor-pointer"
           :class="staffTab === 'disputes' ? 'bg-white text-amber-700 shadow-xs' : 'text-slate-600 hover:text-slate-900'"
         >
           <Scale :size="13" />
@@ -2933,6 +2952,70 @@ onBeforeUnmount(stopScanner);
         </div>
       </section>
     </main>
+
+    <!-- THANH ĐIỀU HƯỚNG DƯỚI CÙNG TRÊN MOBILE CHO NHÂN SỰ (STAFF) -->
+    <nav class="md:hidden fixed bottom-0 inset-x-0 z-40 bg-white/95 backdrop-blur-md border-t border-slate-200/90 flex items-center justify-around py-1.5 px-2 shadow-lg pb-safe">
+      <button
+        v-if="staffCanInvite"
+        type="button"
+        @click="staffTab = 'invite'"
+        class="flex flex-col items-center justify-center flex-1 py-1 px-1 rounded-xl transition cursor-pointer"
+        :class="staffTab === 'invite' ? 'text-primary-700 bg-primary-50/80 font-bold' : 'text-slate-500 hover:text-slate-800 font-medium'"
+      >
+        <Users :size="18" />
+        <span class="text-[10px] mt-0.5">Mời khách</span>
+      </button>
+
+      <button
+        v-if="staffCanApprove"
+        type="button"
+        @click="staffTab = 'approve'"
+        class="flex flex-col items-center justify-center flex-1 py-1 px-1 rounded-xl transition cursor-pointer relative"
+        :class="staffTab === 'approve' ? 'text-emerald-700 bg-emerald-50/80 font-bold' : 'text-slate-500 hover:text-slate-800 font-medium'"
+      >
+        <UserCheck :size="18" />
+        <span class="text-[10px] mt-0.5">Duyệt khách</span>
+        <span v-if="staffRegistrations.filter(r => r.status === 'PENDING').length" class="absolute top-0 right-2 px-1 py-0.2 bg-amber-500 text-white rounded-full text-[9px] font-mono leading-none">
+          {{ staffRegistrations.filter(r => r.status === 'PENDING').length }}
+        </span>
+      </button>
+
+      <button
+        v-if="staffCanScan"
+        type="button"
+        @click="staffTab = 'scan'"
+        class="flex flex-col items-center justify-center flex-1 py-1 px-1 rounded-xl transition cursor-pointer"
+        :class="staffTab === 'scan' ? 'text-primary-700 bg-primary-50/80 font-bold' : 'text-slate-500 hover:text-slate-800 font-medium'"
+      >
+        <Camera :size="18" />
+        <span class="text-[10px] mt-0.5">Quét vé</span>
+      </button>
+
+      <button
+        v-if="staffCanReport"
+        type="button"
+        @click="staffTab = 'report'"
+        class="flex flex-col items-center justify-center flex-1 py-1 px-1 rounded-xl transition cursor-pointer"
+        :class="staffTab === 'report' ? 'text-indigo-700 bg-indigo-50/80 font-bold' : 'text-slate-500 hover:text-slate-800 font-medium'"
+      >
+        <BarChart3 :size="18" />
+        <span class="text-[10px] mt-0.5">Báo cáo</span>
+      </button>
+
+      <button
+        v-if="staffCanApprove || disputesList.length > 0"
+        type="button"
+        @click="loadDisputes(); staffTab = 'disputes'"
+        class="flex flex-col items-center justify-center flex-1 py-1 px-1 rounded-xl transition cursor-pointer relative"
+        :class="staffTab === 'disputes' ? 'text-amber-700 bg-amber-50/80 font-bold' : 'text-slate-500 hover:text-slate-800 font-medium'"
+      >
+        <Scale :size="18" />
+        <span class="text-[10px] mt-0.5">Tranh chấp</span>
+        <span v-if="disputesList.filter(d => d.decision === 'PENDING').length" class="absolute top-0 right-2 px-1 py-0.2 bg-amber-500 text-white rounded-full text-[9px] font-mono leading-none">
+          {{ disputesList.filter(d => d.decision === 'PENDING').length }}
+        </span>
+      </button>
+    </nav>
   </div>
 
   <div v-else class="app-shell">
@@ -3323,29 +3406,49 @@ onBeforeUnmount(stopScanner);
                 <b>Chưa có nhân sự</b>
                 <span>Tạo tài khoản cho những người sẽ vận hành sự kiện.</span>
               </div>
-              <div v-else class="table-scroll">
-                <table>
-                  <thead>
-                    <tr>
-                      <th>Nhân sự</th>
-                      <th>Liên hệ</th>
-                      <th>Sự kiện được gán</th>
-                      <th>Trạng thái</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    <tr v-for="member in team" :key="member.id">
-                      <td><b>{{ member.name }}</b><small>{{ member.email }}</small></td>
-                      <td>{{ member.phone || '—' }}</td>
-                      <td>{{ member.assigned_events }}</td>
-                      <td>
-                        <span class="status-pill" :class="member.status === 'ACTIVE' ? 'status-green' : 'status-gray'">
-                          {{ member.status === 'ACTIVE' ? 'Hoạt động' : 'Đã khóa' }}
-                        </span>
-                      </td>
-                    </tr>
-                  </tbody>
-                </table>
+              <div v-else>
+                <!-- Mobile Cards for Team -->
+                <div class="sm:hidden divide-y divide-slate-100 p-2 space-y-2">
+                  <div v-for="member in team" :key="member.id" class="p-3.5 bg-white rounded-2xl border border-slate-200 shadow-2xs space-y-2">
+                    <div class="flex items-center justify-between">
+                      <b class="text-sm font-bold text-slate-900">{{ member.name }}</b>
+                      <span class="status-pill text-[10px]" :class="member.status === 'ACTIVE' ? 'status-green' : 'status-gray'">
+                        {{ member.status === 'ACTIVE' ? 'Hoạt động' : 'Đã khóa' }}
+                      </span>
+                    </div>
+                    <div class="text-xs text-slate-500 font-mono">{{ member.email }}</div>
+                    <div class="text-xs text-slate-600 flex items-center justify-between pt-1.5 border-t border-slate-100">
+                      <span>SĐT: {{ member.phone || '—' }}</span>
+                      <span class="text-primary-700 font-bold">{{ member.assigned_events }} sự kiện</span>
+                    </div>
+                  </div>
+                </div>
+
+                <!-- Desktop Table -->
+                <div class="hidden sm:block table-scroll">
+                  <table>
+                    <thead>
+                      <tr>
+                        <th>Nhân sự</th>
+                        <th>Liên hệ</th>
+                        <th>Sự kiện được gán</th>
+                        <th>Trạng thái</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      <tr v-for="member in team" :key="member.id">
+                        <td><b>{{ member.name }}</b><small>{{ member.email }}</small></td>
+                        <td>{{ member.phone || '—' }}</td>
+                        <td>{{ member.assigned_events }}</td>
+                        <td>
+                          <span class="status-pill" :class="member.status === 'ACTIVE' ? 'status-green' : 'status-gray'">
+                            {{ member.status === 'ACTIVE' ? 'Hoạt động' : 'Đã khóa' }}
+                          </span>
+                        </td>
+                      </tr>
+                    </tbody>
+                  </table>
+                </div>
               </div>
             </section>
             <section v-if="selectedEvent" class="surface-card">
