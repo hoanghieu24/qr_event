@@ -22,7 +22,6 @@ import {
   Move,
   Palette,
   User,
-  Eye,
   Share2
 } from 'lucide-vue-next';
 
@@ -89,9 +88,6 @@ const activeSavedTemplateId = ref<string | null>(null);
 const customTemplateName = ref<string>('Mẫu Phôi Canva #1');
 const isDraggingPreview = ref(false);
 const previewContainerRef = ref<HTMLElement | null>(null);
-
-// Mobile View Mode: 'preview' (xem thiệp) | 'edit' (tùy chỉnh & mẫu)
-const mobileViewMode = ref<'preview' | 'edit'>('preview');
 const nudgeStep = ref<number>(2);
 
 const activeAdjustTabName = computed(() => {
@@ -1538,35 +1534,10 @@ onBeforeUnmount(() => {
       </div>
 
       <!-- Modal Body (flex-1 min-h-0 overflow-hidden) -->
-      <div class="p-2.5 sm:p-5 flex-1 min-h-0 flex flex-col md:grid md:grid-cols-12 gap-3 md:gap-4 lg:gap-6 overflow-y-auto md:overflow-hidden overscroll-contain">
+      <div class="p-2.5 sm:p-5 flex-1 min-h-0 flex flex-col md:grid md:grid-cols-12 gap-3.5 md:gap-4 lg:gap-6 overflow-y-auto md:overflow-hidden overscroll-contain">
         
-        <!-- Mobile Segmented View Switcher (md:hidden) -->
-        <div class="md:hidden flex items-center bg-slate-100 p-1 rounded-2xl shrink-0 gap-1 shadow-2xs">
-          <button
-            type="button"
-            @click="mobileViewMode = 'preview'"
-            class="flex-1 py-2 px-3 rounded-xl text-xs font-bold transition flex items-center justify-center gap-1.5 cursor-pointer"
-            :class="mobileViewMode === 'preview' ? 'bg-primary-700 text-white shadow-xs' : 'text-slate-600 hover:text-slate-900'"
-          >
-            <Eye class="w-4 h-4" />
-            <span>1. Xem thiệp mời VIP</span>
-          </button>
-          <button
-            type="button"
-            @click="mobileViewMode = 'edit'"
-            class="flex-1 py-2 px-3 rounded-xl text-xs font-bold transition flex items-center justify-center gap-1.5 cursor-pointer"
-            :class="mobileViewMode === 'edit' ? 'bg-primary-700 text-white shadow-xs' : 'text-slate-600 hover:text-slate-900'"
-          >
-            <Sliders class="w-4 h-4" />
-            <span>2. Tùy chỉnh & Mẫu thiệp</span>
-          </button>
-        </div>
-
-        <!-- Col 1: Form Customization (md:col-span-7) -->
-        <div
-          class="md:col-span-7 md:h-full md:min-h-0 flex flex-col md:overflow-hidden space-y-0 text-sm"
-          :class="mobileViewMode === 'edit' ? 'flex flex-1 min-h-0' : 'hidden md:flex'"
-        >
+        <!-- Col 1: Form Customization (md:col-span-7) - Ở DƯỚI TRÊN MOBILE, BÊN TRÁI TRÊN DESKTOP -->
+        <div class="order-2 md:order-1 md:col-span-7 md:h-full md:min-h-0 flex flex-col md:overflow-hidden space-y-0 text-sm">
           
           <!-- Top Tab Switcher (shrink-0) -->
           <div class="grid grid-cols-3 gap-1 bg-slate-100 p-1 rounded-xl mb-3 shrink-0 text-xs font-bold">
@@ -2244,35 +2215,22 @@ onBeforeUnmount(() => {
             </div>
 
           </div>
-
-          <!-- Mobile Return to Preview Button (md:hidden) -->
-          <div class="md:hidden pt-2.5 mt-auto border-t border-slate-100 shrink-0">
-            <button
-              type="button"
-              @click="mobileViewMode = 'preview'"
-              class="w-full py-2.5 px-4 rounded-xl bg-primary-700 hover:bg-primary-800 text-white font-bold text-xs flex items-center justify-center gap-2 shadow-xs cursor-pointer active:scale-98 transition"
-            >
-              <Eye class="w-4 h-4" />
-              <span>Xem kết quả thiệp mời</span>
-            </button>
-          </div>
         </div>
 
-        <!-- Col 2: Live Canvas Preview & Quick Export (md:col-span-5) -->
+        <!-- Col 2: Live Canvas Preview & Quick Export (md:col-span-5) - TRÊN CÙNG TRÊN MOBILE, BÊN PHẢI TRÊN DESKTOP -->
         <div
-          class="md:col-span-5 md:h-full md:min-h-0 flex flex-col justify-between items-center bg-slate-900 text-white p-2.5 sm:p-4 rounded-2xl border border-slate-800 shadow-inner overflow-hidden space-y-2.5"
-          :class="mobileViewMode === 'preview' ? 'flex flex-1 min-h-0' : 'hidden md:flex'"
+          class="order-1 md:order-2 md:col-span-5 md:h-full md:min-h-0 flex flex-col justify-between items-center bg-slate-900 text-white p-2.5 sm:p-4 rounded-2xl border border-slate-800 shadow-sm shrink-0 md:shrink overflow-hidden space-y-2"
         >
           <!-- Top Preview Bar (shrink-0) -->
           <div class="flex items-center justify-between w-full px-1 text-slate-400 text-xs shrink-0">
             <span class="flex items-center gap-1 font-semibold text-amber-400">
               <Sparkles class="w-3.5 h-3.5" />
-              <span>{{ selectedTheme === 'custom-template' ? 'Chạm/Kéo để đặt vị trí' : 'Xem trước thiệp mời' }}</span>
+              <span>{{ selectedTheme === 'custom-template' ? 'Chạm/Kéo để đặt vị trí' : 'Xem trước thiệp mời VIP' }}</span>
             </span>
             <button
               type="button"
               @click="showZoomModal = true"
-              class="hover:text-white flex items-center gap-1 transition cursor-pointer text-xs"
+              class="hover:text-white flex items-center gap-1 transition cursor-pointer text-xs bg-slate-800 px-2 py-0.5 rounded-lg border border-slate-700/60"
               title="Phóng to xem đầy đủ"
             >
               <Maximize2 class="w-3.5 h-3.5" />
@@ -2320,8 +2278,8 @@ onBeforeUnmount(() => {
             </button>
           </div>
 
-          <!-- Live Card Preview Canvas Wrapper (flex-1 min-h-0) -->
-          <div class="flex-1 min-h-0 w-full flex items-center justify-center my-auto overflow-hidden py-1">
+          <!-- Live Card Preview Canvas Wrapper -->
+          <div class="w-full flex items-center justify-center my-auto overflow-hidden py-1">
             <div
               ref="previewContainerRef"
               @pointerdown="onPreviewPointerDown"
@@ -2329,7 +2287,7 @@ onBeforeUnmount(() => {
               @pointerup="onPreviewPointerUp"
               @pointercancel="onPreviewPointerUp"
               :class="[selectedTheme === 'custom-template' ? 'cursor-crosshair' : '', isDraggingPreview ? 'touch-none' : 'touch-pan-y']"
-              class="relative h-full max-h-[44dvh] sm:max-h-[480px] w-auto aspect-[9/16] rounded-2xl overflow-hidden shadow-2xl border-2 border-amber-500/30 bg-slate-950 flex items-center justify-center group select-none"
+              class="relative h-[250px] sm:h-[300px] md:h-full md:max-h-[480px] w-auto aspect-[9/16] rounded-2xl overflow-hidden shadow-2xl border-2 border-amber-500/30 bg-slate-950 flex items-center justify-center group select-none"
               :style="{ aspectRatio: `1080 / ${customAspectHeight}` }"
             >
               <!-- Hidden high-res canvas -->
@@ -2358,33 +2316,25 @@ onBeforeUnmount(() => {
             </div>
           </div>
 
-          <!-- Mobile Quick Action Buttons (md:hidden) -->
-          <div class="md:hidden w-full grid grid-cols-3 gap-2 shrink-0 pt-1">
-            <button
-              type="button"
-              @click="mobileViewMode = 'edit'"
-              class="py-2.5 px-2 rounded-xl bg-slate-800 hover:bg-slate-700 border border-slate-700 text-white text-xs font-bold flex items-center justify-center gap-1.5 transition cursor-pointer"
-            >
-              <Sliders class="w-3.5 h-3.5 text-amber-400" />
-              <span>Sửa mẫu</span>
-            </button>
+          <!-- Quick Action Buttons for Card -->
+          <div class="w-full grid grid-cols-2 gap-2 shrink-0 pt-0.5">
             <button
               type="button"
               @click="downloadCard"
               :disabled="isGenerating || !previewDataUrl"
-              class="py-2.5 px-2 rounded-xl bg-primary-600 hover:bg-primary-700 text-white text-xs font-bold flex items-center justify-center gap-1.5 transition cursor-pointer shadow-xs"
+              class="py-2 px-2.5 rounded-xl bg-primary-600 hover:bg-primary-700 text-white text-xs font-bold flex items-center justify-center gap-1.5 transition cursor-pointer shadow-xs active:scale-98"
             >
               <Download class="w-3.5 h-3.5" />
-              <span>Tải PNG</span>
+              <span>Tải thiệp PNG</span>
             </button>
             <button
               type="button"
               @click="shareCard"
               :disabled="isGenerating || !previewDataUrl"
-              class="py-2.5 px-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold flex items-center justify-center gap-1.5 transition cursor-pointer shadow-xs"
+              class="py-2 px-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold flex items-center justify-center gap-1.5 transition cursor-pointer shadow-xs active:scale-98"
             >
               <Share2 class="w-3.5 h-3.5" />
-              <span>Chia sẻ</span>
+              <span>Chia sẻ Zalo/SMS</span>
             </button>
           </div>
 
