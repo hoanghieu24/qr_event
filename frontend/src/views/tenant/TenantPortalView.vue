@@ -143,8 +143,9 @@ const staffCanInvite = computed(() => {
 
 const staffCanApprove = computed(() => {
   return (
-    staffEvents.value.some((e) => e.my_can_approve) ||
-    Boolean(user.value?.permissions?.includes('registrations:approve'))
+    staffEvents.value.some((e) => e.my_can_approve || e.my_can_invite) ||
+    Boolean(user.value?.permissions?.includes('registrations:approve')) ||
+    Boolean(user.value?.permissions?.includes('invite:create'))
   );
 });
 
@@ -249,7 +250,7 @@ const initStaffAssignments = () => {
 const onMemberRoleChange = (member: any) => {
   if (member.role === 'INVITER') {
     member.can_invite = true;
-    member.can_approve = false;
+    member.can_approve = true; // Người mời có quyền duyệt khách
     member.can_scan = false;
     member.can_view_report = false;
   } else if (member.role === 'APPROVER') {
@@ -2233,7 +2234,7 @@ onBeforeUnmount(stopScanner);
                 </div>
 
                 <div
-                  v-if="reg.status === 'PENDING' && (staffSelectedEvent?.my_can_approve || user?.permissions?.includes('registrations:approve'))"
+                  v-if="reg.status === 'PENDING' && (staffSelectedEvent?.my_can_approve || staffSelectedEvent?.my_can_invite || user?.permissions?.includes('registrations:approve'))"
                   class="pt-1 flex justify-end"
                 >
                   <button
@@ -2294,7 +2295,7 @@ onBeforeUnmount(stopScanner);
                     </td>
                     <td class="py-3 px-4 text-right">
                       <button
-                        v-if="reg.status === 'PENDING' && (staffSelectedEvent?.my_can_approve || user?.permissions?.includes('registrations:approve'))"
+                        v-if="reg.status === 'PENDING' && (staffSelectedEvent?.my_can_approve || staffSelectedEvent?.my_can_invite || user?.permissions?.includes('registrations:approve'))"
                         type="button"
                         @click="approveStaffGuest(reg.id)"
                         class="px-2.5 py-1 rounded-md bg-primary-50 text-primary-700 hover:bg-primary-100 font-bold text-[11px] border border-primary-200 cursor-pointer"

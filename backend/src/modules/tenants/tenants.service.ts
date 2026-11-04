@@ -9,7 +9,7 @@ import { InvitesService } from '../invites/invites.service';
 const FREE_EVENT_LIMIT = 3;
 
 const ROLE_CONFIG: Record<string, { permissionCodes: string[]; can_invite: number; can_approve: number; can_scan: number; can_view_report: number }> = {
-  INVITER: { permissionCodes: ['invite:create', 'registrations:view_own'], can_invite: 1, can_approve: 0, can_scan: 0, can_view_report: 0 },
+  INVITER: { permissionCodes: ['invite:create', 'registrations:view_own', 'registrations:approve'], can_invite: 1, can_approve: 1, can_scan: 0, can_view_report: 0 },
   APPROVER: { permissionCodes: ['registrations:view_own', 'registrations:approve'], can_invite: 0, can_approve: 1, can_scan: 0, can_view_report: 0 },
   SCANNER: { permissionCodes: ['tickets:scan'], can_invite: 0, can_approve: 0, can_scan: 1, can_view_report: 0 },
   REPORTER: { permissionCodes: ['reports:view'], can_invite: 0, can_approve: 0, can_scan: 0, can_view_report: 1 },
@@ -802,7 +802,7 @@ export class TenantsService {
       await conn.query('DELETE FROM user_permissions WHERE user_id = ?', [data.staff_id]);
       const permsToInsert: string[] = ['registrations:view_own'];
       if (Number(q.has_invite) > 0) permsToInsert.push('invite:create');
-      if (Number(q.has_approve) > 0) permsToInsert.push('registrations:approve');
+      if (Number(q.has_approve) > 0 || Number(q.has_invite) > 0) permsToInsert.push('registrations:approve');
       if (Number(q.has_scan) > 0) permsToInsert.push('tickets:scan');
       if (Number(q.has_report) > 0) permsToInsert.push('reports:view');
       for (const p of permsToInsert) {

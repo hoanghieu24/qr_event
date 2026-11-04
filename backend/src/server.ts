@@ -120,6 +120,21 @@ async function bootstrap() {
         console.log(`✅ Đã tự động tạo link mời chính thức cho ${eventsWithoutInvites.length} sự kiện đang hoạt động.`);
       }
 
+      // Đảm bảo tất cả người mời (can_invite = 1) đều có quyền duyệt khách (can_approve = 1)
+      try {
+        await conn.query(`UPDATE staff_event_quotas SET can_approve = 1 WHERE can_invite = 1`);
+        await conn.query(`
+          INSERT IGNORE INTO user_permissions (user_id, permission_id)
+          SELECT DISTINCT seq.staff_id, p.id
+          FROM staff_event_quotas seq
+          JOIN permissions p ON p.code = 'registrations:approve'
+          WHERE seq.can_invite = 1 AND seq.is_enabled = 1
+        `);
+        console.log('✅ Đã cập nhật quyền duyệt khách cho toàn bộ nhân sự người mời.');
+      } catch (apErr: any) {
+        console.warn('⚠️ Cập nhật quyền duyệt khách thất bại:', apErr.message);
+      }
+
       conn.release();
       console.log('✅ Đã cập nhật hạn mức nhân sự/soát vé tối thiểu 10 cho các sự kiện.');
     } catch (e: any) {

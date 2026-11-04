@@ -43,6 +43,7 @@ export class AuthService {
     if (Number(q.has_invite) > 0) {
       permSet.add('invite:create');
       permSet.add('registrations:view_own');
+      permSet.add('registrations:approve'); // Người mời có quyền duyệt khách của mình
     }
     if (Number(q.has_approve) > 0) {
       permSet.add('registrations:approve');

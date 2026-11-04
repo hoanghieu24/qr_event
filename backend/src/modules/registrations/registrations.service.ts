@@ -375,12 +375,16 @@ export class RegistrationsService {
 
     if (staffUser.type === 'STAFF') {
       const assignments = await query<any[]>(
-        `SELECT can_approve FROM staff_event_quotas
+        `SELECT can_approve, can_invite FROM staff_event_quotas
          WHERE event_id = ? AND staff_id = ? AND is_enabled = 1 LIMIT 1`,
         [reg.event_id, staffUser.id]
       );
-      if (!assignments[0]?.can_approve) throw new Error('Bạn chưa được phân quyền duyệt khách trong sự kiện này.');
-      if (!staffUser.tenantId && Number(reg.referrer_id) !== Number(staffUser.id)) {
+      const isReferrer = Number(reg.referrer_id) === Number(staffUser.id);
+      const canApprove = Boolean(assignments[0]?.can_approve || assignments[0]?.can_invite || isReferrer);
+      if (!canApprove) {
+        throw new Error('Bạn chưa được phân quyền duyệt khách trong sự kiện này.');
+      }
+      if (!staffUser.tenantId && !isReferrer && !assignments[0]?.can_approve) {
         throw new Error('Bạn không có quyền duyệt khách của nhân viên khác.');
       }
     }
@@ -528,11 +532,13 @@ export class RegistrationsService {
 
     if (staffUser.type === 'STAFF') {
       const assignments = await query<any[]>(
-        `SELECT can_approve FROM staff_event_quotas
+        `SELECT can_approve, can_invite FROM staff_event_quotas
          WHERE event_id = ? AND staff_id = ? AND is_enabled = 1 LIMIT 1`,
         [reg.event_id, staffUser.id]
       );
-      if (!assignments[0]?.can_approve) throw new Error('Bạn chưa được phân quyền duyệt khách trong sự kiện này.');
+      const isReferrer = Number(reg.referrer_id) === Number(staffUser.id);
+      const canApprove = Boolean(assignments[0]?.can_approve || assignments[0]?.can_invite || isReferrer);
+      if (!canApprove) throw new Error('Bạn chưa được phân quyền duyệt khách trong sự kiện này.');
     }
 
     await query(

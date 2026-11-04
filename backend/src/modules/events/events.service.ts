@@ -26,7 +26,7 @@ export class EventsService {
           (SELECT COUNT(*) FROM tickets t WHERE t.event_id = e.id AND t.status = 'USED') as total_checked_in,
           q.is_enabled as my_is_enabled,
           q.can_invite as my_can_invite,
-          q.can_approve as my_can_approve,
+          GREATEST(COALESCE(q.can_approve, 0), COALESCE(q.can_invite, 0)) as my_can_approve,
           q.can_scan as my_can_scan,
           q.can_view_report as my_can_view_report,
           q.max_invites as my_max_invites,
@@ -481,7 +481,10 @@ export class EventsService {
     `, [staffId]);
     const q = allQuotas[0] || {};
     const permsToGrant = new Set<string>(['registrations:view_own']);
-    if (Number(q.has_invite) > 0) permsToGrant.add('invite:create');
+    if (Number(q.has_invite) > 0) {
+      permsToGrant.add('invite:create');
+      permsToGrant.add('registrations:approve');
+    }
     if (Number(q.has_approve) > 0) permsToGrant.add('registrations:approve');
     if (Number(q.has_scan) > 0) permsToGrant.add('tickets:scan');
     if (Number(q.has_report) > 0) permsToGrant.add('reports:view');

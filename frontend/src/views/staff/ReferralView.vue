@@ -303,10 +303,6 @@ const downloadQrImage = () => {
 };
 
 const handleApprove = async (reg: any) => {
-  if (selectedEvent.value && (selectedEvent.value.my_can_approve === 0 || selectedEvent.value.staff_can_approve === 0)) {
-    alert('Tài khoản của bạn không được phân quyền phê duyệt khách cho sự kiện này.');
-    return;
-  }
   const isTwoTier = reg.event_approval_mode === 'TWO_TIER';
   const confirmMsg = isTwoTier
     ? 'Xác nhận duyệt vòng 1 cho khách này? Hồ sơ sẽ được chuyển tiếp để Admin duyệt cấp vé QR.'
@@ -891,28 +887,20 @@ const filteredRegistrations = computed(() => {
           </div>
 
           <!-- Actions -->
-          <div v-if="reg.status === 'PENDING'" class="pt-2 border-t border-slate-100">
-            <div
-              v-if="selectedEvent && (selectedEvent.my_can_approve === 0 || selectedEvent.staff_can_approve === 0)"
-              class="text-[11px] text-slate-400 italic py-1"
+          <div v-if="reg.status === 'PENDING'" class="pt-2 border-t border-slate-100 flex gap-2">
+            <button
+              @click="handleApprove(reg)"
+              class="btn btn-primary flex-1 py-2 text-xs font-bold"
             >
-              Bạn không có quyền phê duyệt khách cho sự kiện này.
-            </div>
-            <div v-else class="flex gap-2">
-              <button
-                @click="handleApprove(reg)"
-                class="btn btn-primary flex-1 py-2 text-xs font-bold"
-              >
-                <CheckCircle2 class="w-3.5 h-3.5" />
-                <span>{{ reg.event_approval_mode === 'TWO_TIER' ? 'Duyệt V1' : 'Duyệt & Cấp QR' }}</span>
-              </button>
-              <button
-                @click="openRejectModal(reg.id)"
-                class="btn btn-ghost border border-slate-200 text-slate-600 hover:text-rose-600 py-2 px-3 text-xs"
-              >
-                Từ chối
-              </button>
-            </div>
+              <CheckCircle2 class="w-3.5 h-3.5" />
+              <span>{{ reg.event_approval_mode === 'TWO_TIER' ? 'Duyệt V1' : 'Duyệt & Cấp QR' }}</span>
+            </button>
+            <button
+              @click="openRejectModal(reg.id)"
+              class="btn btn-ghost border border-slate-200 text-slate-600 hover:text-rose-600 py-2 px-3 text-xs"
+            >
+              Từ chối
+            </button>
           </div>
           <div v-else-if="reg.status === 'PENDING_ADMIN'" class="pt-2 border-t border-slate-100 text-[11px] text-indigo-700 font-medium">
             ℹ️ Bạn đã duyệt vòng 1. Đang chờ Admin duyệt bước cuối để phát hành vé QR.
@@ -1021,15 +1009,7 @@ const filteredRegistrations = computed(() => {
                 <!-- Col 6: Hành động (Compact & Strictly Bounded) -->
                 <td class="py-3.5 px-4 text-right whitespace-nowrap">
                   <template v-if="reg.status === 'PENDING'">
-                    <div
-                      v-if="selectedEvent && (selectedEvent.my_can_approve === 0 || selectedEvent.staff_can_approve === 0)"
-                      class="flex items-center justify-end"
-                    >
-                      <span class="chip chip-slate text-[10px] font-semibold" title="Bạn không có quyền duyệt khách cho sự kiện này">
-                        Chờ duyệt
-                      </span>
-                    </div>
-                    <div v-else class="flex items-center justify-end gap-1.5">
+                    <div class="flex items-center justify-end gap-1.5">
                       <button
                         @click="handleApprove(reg)"
                         class="btn btn-primary py-1 px-2.5 text-[11px] font-bold shadow-xs whitespace-nowrap flex items-center gap-1"
