@@ -513,6 +513,20 @@ export class TenantsService {
     });
 
     Realtime.emitDashboardRefresh();
+
+    // Tu dong tao truoc 1 link moi chinh thuc mac dinh
+    try {
+      await InvitesService.createInviteLink({
+        event_id: created.id,
+        referrer_id: userId,
+        expires_in_days: 60,
+        max_registrations: created.package?.max_attendees || 1000,
+        is_admin: true,
+      });
+    } catch (invErr) {
+      console.warn('Auto create default invite on event creation error:', invErr);
+    }
+
     return {
       ...created,
       name: data.name,
@@ -816,18 +830,59 @@ export class TenantsService {
     return { success: true, message: 'Đã xóa nhân sự khỏi đơn vị thành công.' };
   }
 
-  static async listEventInvites(tenantId: number, eventId: number) {
+  static async listEventInvites(tenantId: number, eventId: number, adminUserId?: number) {
     await this.requireTenantEvent(tenantId, eventId);
-    const rows = await query<any[]>(`
-      SELECT il.*, u.name AS referrer_name, u.email AS referrer_email,
+    let rows = await query<any[]>(`
+      SELECT il.*, COALESCE(u.name, 'Ban Tổ Chức') AS referrer_name, u.email AS referrer_email,
              (SELECT COUNT(*) FROM registrations r WHERE r.invite_link_id = il.id) AS total_registered,
              (SELECT COUNT(*) FROM registrations r WHERE r.invite_link_id = il.id AND r.status = 'APPROVED') AS total_approved,
              (SELECT COUNT(*) FROM registrations r WHERE r.invite_link_id = il.id AND r.ticket_status = 'USED') AS total_checked_in
       FROM invite_links il
-      JOIN users u ON il.referrer_id = u.id
+      LEFT JOIN users u ON il.referrer_id = u.id
       WHERE il.event_id = ?
       ORDER BY il.id DESC
     `, [eventId]);
+
+    // Nếu chưa có link mời nào ở trạng thái ACTIVE, tự động tạo ngay 1 link chính thức
+    let hasActive = rows.some((r) => r.status === 'ACTIVE');
+    if (!hasActive) {
+      try {
+        let refId: number = Number(adminUserId || 0);
+        if (!refId) {
+          const tenantOwners = await query<any[]>(
+            'SELECT tu.user_id FROM tenant_users tu WHERE tu.tenant_id = ? AND tu.role = "OWNER" LIMIT 1',
+            [tenantId]
+          );
+          refId = tenantOwners[0]?.user_id ? Number(tenantOwners[0].user_id) : 0;
+        }
+        if (!refId) {
+          const evRows = await query<any[]>('SELECT created_by FROM events WHERE id = ? LIMIT 1', [eventId]);
+          refId = evRows[0]?.created_by ? Number(evRows[0].created_by) : 1;
+        }
+
+        const newLink = await InvitesService.createInviteLink({
+          event_id: eventId,
+          referrer_id: refId,
+          expires_in_days: 60,
+          max_registrations: 1000,
+          is_admin: true,
+        });
+
+        const userRows = await query<any[]>('SELECT name, email FROM users WHERE id = ? LIMIT 1', [refId]);
+        const newRow = {
+          ...newLink,
+          referrer_name: userRows[0]?.name || 'Ban Tổ Chức',
+          referrer_email: userRows[0]?.email || '',
+          total_registered: 0,
+          total_approved: 0,
+          total_checked_in: 0,
+          status: 'ACTIVE',
+        };
+        rows.unshift(newRow);
+      } catch (err) {
+        console.warn('Auto create default invite link in listEventInvites error:', err);
+      }
+    }
 
     // Tự động rút gọn link cũ nếu dài hơn 12 ký tự hoặc có tiền tố inv_
     for (const r of rows) {

@@ -253,7 +253,11 @@ export class TenantsController {
 
   static async eventInvites(req: Request, res: Response) {
     try {
-      const invites = await TenantsService.listEventInvites(Number(req.user!.tenantId), Number(req.params.eventId));
+      const invites = await TenantsService.listEventInvites(
+        Number(req.user!.tenantId),
+        Number(req.params.eventId),
+        Number(req.user!.id)
+      );
       res.json({ success: true, data: invites });
     } catch (error: any) {
       res.status(400).json({ success: false, message: error.message });

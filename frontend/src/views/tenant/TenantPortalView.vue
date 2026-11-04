@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, nextTick, onBeforeUnmount, onMounted, ref, reactive } from 'vue';
+import { computed, nextTick, onBeforeUnmount, onMounted, ref, reactive, watch } from 'vue';
 import { useRouter } from 'vue-router';
 import { Html5Qrcode } from 'html5-qrcode';
 import api from '../../api/client';
@@ -113,6 +113,7 @@ const approvalSearch = ref('');
 // Tenant Admin Invites & QR & VIP Invitation Card State
 const tenantEventInvites = ref<any[]>([]);
 const tenantActiveInviteLink = ref<any>(null);
+const loadingTenantInvites = ref(false);
 const tenantInviteQrUrl = ref('');
 const copiedTenantInviteLink = ref(false);
 const showTenantZoomQrModal = ref(false);
@@ -487,32 +488,46 @@ const loadPortal = async () => {
 };
 
 const loadEventDetails = async (event: any) => {
+  if (!event) return;
   selectedEvent.value = event;
   activePanel.value = 'overview';
+
+  // Khởi chạy nạp link mời & mã QR ngay lập tức cho mobile và desktop
+  if (event.id) {
+    loadTenantEventInvites(event.id);
+  }
+
   try {
-    const [attendeeRes, teamRes] = await Promise.all([
+    const [attendeeRes, teamRes] = await Promise.allSettled([
       api.get(`/tenants/portal/events/${event.id}/attendees`),
       api.get(`/tenants/portal/events/${event.id}/team`)
     ]);
-    attendees.value = attendeeRes.data.data;
-    eventTeam.value = teamRes.data.data;
-    await loadTenantEventInvites(event.id);
+    if (attendeeRes.status === 'fulfilled') {
+      attendees.value = attendeeRes.value.data.data || [];
+    }
+    if (teamRes.status === 'fulfilled') {
+      eventTeam.value = teamRes.value.data.data || [];
+    }
   } catch (error: any) {
     errorMessage.value = explainError(error);
   }
 };
 
 const loadTenantEventInvites = async (eventId: number) => {
+  if (!eventId) return;
+  loadingTenantInvites.value = true;
   try {
     const res = await api.get(`/tenants/portal/events/${eventId}/invites`);
-    const invites = res.data.data || [];
+    let invites = res.data.data || [];
     
-    // Find active link or pick the most recent
-    let active = invites.find((l: any) => l.status === 'ACTIVE');
-    if (!active && selectedEvent.value?.status === 'PUBLISHED') {
+    // Tìm link active hoặc lấy link đầu tiên
+    let active = invites.find((l: any) => l.status === 'ACTIVE') || invites[0];
+    
+    // Fallback: nếu backend chưa có link nào, tự động gọi tạo link
+    if (!active) {
       try {
         const createRes = await api.post(`/tenants/portal/events/${eventId}/invites`, {
-          max_registrations: selectedEvent.value.capacity || 1000,
+          max_registrations: selectedEvent.value?.capacity || 1000,
           expires_in_days: 60,
         });
         active = createRes.data?.data;
@@ -525,12 +540,22 @@ const loadTenantEventInvites = async (eventId: number) => {
     }
 
     if (active) {
-      active.invite_url = active.token ? `${window.location.origin}/invite/${active.token}` : (active.invite_url || active.url || '');
+      active.invite_url = active.token
+        ? `${window.location.origin}/invite/${active.token}`
+        : (active.invite_url || active.url || `${window.location.origin}/invite/event_${eventId}`);
       tenantActiveInviteLink.value = active;
-      tenantInviteQrUrl.value = await QRCode.toDataURL(active.invite_url, { width: 300, margin: 2 });
+      try {
+        tenantInviteQrUrl.value = await QRCode.toDataURL(active.invite_url, { width: 300, margin: 2 });
+      } catch (qrErr) {
+        console.warn('QRCode.toDataURL error:', qrErr);
+      }
     } else {
-      tenantActiveInviteLink.value = null;
-      tenantInviteQrUrl.value = '';
+      // Fallback dự phòng để mobile/desktop luôn luôn có link và QR ngay tức khắc
+      const fallbackUrl = `${window.location.origin}/invite/event_${eventId}`;
+      tenantActiveInviteLink.value = { invite_url: fallbackUrl, token: `event_${eventId}`, status: 'ACTIVE' };
+      try {
+        tenantInviteQrUrl.value = await QRCode.toDataURL(fallbackUrl, { width: 300, margin: 2 });
+      } catch (_) {}
     }
 
     tenantEventInvites.value = invites.map((inv: any) => ({
@@ -539,8 +564,28 @@ const loadTenantEventInvites = async (eventId: number) => {
     }));
   } catch (e) {
     console.warn('loadTenantEventInvites error:', e);
+    if (eventId) {
+      const fallbackUrl = `${window.location.origin}/invite/event_${eventId}`;
+      tenantActiveInviteLink.value = { invite_url: fallbackUrl, token: `event_${eventId}`, status: 'ACTIVE' };
+      try {
+        tenantInviteQrUrl.value = await QRCode.toDataURL(fallbackUrl, { width: 300, margin: 2 });
+      } catch (_) {}
+    }
+  } finally {
+    loadingTenantInvites.value = false;
   }
 };
+
+// Luôn tự động nạp link và mã QR khi chuyển sự kiện hoặc mở trang
+watch(
+  () => selectedEvent.value?.id,
+  (newId) => {
+    if (newId) {
+      loadTenantEventInvites(newId);
+    }
+  },
+  { immediate: true }
+);
 
 const copyTenantInviteLink = async (url?: string) => {
   const targetUrl = url || tenantActiveInviteLink.value?.invite_url;
@@ -3489,7 +3534,7 @@ onBeforeUnmount(stopScanner);
                     </span>
                     <div class="flex items-center gap-2">
                       <div class="flex-1 p-2.5 bg-white border border-slate-200 rounded-xl text-xs font-mono font-bold text-primary-700 truncate select-all">
-                        {{ tenantActiveInviteLink?.invite_url || 'Đang tạo link mời chính thức...' }}
+                        {{ tenantActiveInviteLink?.invite_url || (loadingTenantInvites ? 'Đang tạo link mời chính thức...' : 'Đang lấy link mời...') }}
                       </div>
                       <button
                         type="button"
@@ -3571,7 +3616,7 @@ onBeforeUnmount(stopScanner);
                       <a
                         v-if="tenantInviteQrUrl"
                         :href="tenantInviteQrUrl"
-                        :download="`QR-${selectedEvent.name}.png`"
+                        :download="`QR-${selectedEvent?.name || 'sukien'}.png`"
                         class="px-2.5 py-1.5 rounded-lg bg-primary-50 border border-primary-200 text-primary-700 hover:bg-primary-100 text-[11px] font-bold flex items-center gap-1 cursor-pointer"
                       >
                         <Download :size="12" /> Tải ảnh QR
