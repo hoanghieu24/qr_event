@@ -48,6 +48,7 @@ import {
   Send,
   Share2,
   Maximize2,
+  Play,
   Download
 } from 'lucide-vue-next';
 import QRCode from 'qrcode';
@@ -772,6 +773,22 @@ const closeEvent = async () => {
   try {
     await api.post(`/tenants/portal/events/${selectedEvent.value.id}/close`);
     await loadPortal();
+  } catch (error: any) {
+    errorMessage.value = explainError(error);
+  }
+};
+
+const reopenEvent = async () => {
+  if (!selectedEvent.value) return;
+  if (!window.confirm(`Mở lại sự kiện “${selectedEvent.value.name}”? Khách mời sẽ có thể tiếp tục nhận link và đăng ký vé.`))
+    return;
+  try {
+    await api.post(`/tenants/portal/events/${selectedEvent.value.id}/reopen`);
+    await loadPortal();
+    if (selectedEvent.value?.id) {
+      await loadTenantEventInvites(selectedEvent.value.id);
+    }
+    alert('Đã mở lại sự kiện thành công! Link mời và mã QR đã sẵn sàng hoạt động.');
   } catch (error: any) {
     errorMessage.value = explainError(error);
   }
@@ -3468,6 +3485,9 @@ onBeforeUnmount(stopScanner);
                     </button>
                     <button v-if="selectedEvent.status === 'PUBLISHED'" class="close-event-button" @click="closeEvent">
                       Đóng sự kiện
+                    </button>
+                    <button v-else-if="selectedEvent.status === 'CLOSED'" class="px-2.5 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-xs font-bold text-white flex items-center gap-1.5 transition cursor-pointer" @click="reopenEvent">
+                      <Play :size="13" /> Mở lại sự kiện
                     </button>
                   </div>
                 </div>

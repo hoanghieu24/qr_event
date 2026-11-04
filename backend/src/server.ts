@@ -92,11 +92,32 @@ async function bootstrap() {
           const shortToken = await InvitesService.generateUniqueShortToken();
           const newSig = InvitesService.generateSignature(l.event_id, l.referrer_id, shortToken);
           await conn.query(
-            `UPDATE invite_links SET legacy_token = token, token = ?, signature = ? WHERE id = ?`,
+            `UPDATE invite_links SET legacy_token = COALESCE(legacy_token, token), token = ?, signature = ? WHERE id = ?`,
             [shortToken, newSig, l.id]
           );
         }
         console.log(`✅ Đã tự động rút gọn ${longLinks.length} link mời cũ sang dạng ngắn (8 ký tự).`);
+      }
+
+      // Đảm bảo mọi sự kiện PUBLISHED đều có ít nhất 1 link mời ACTIVE
+      const [eventsWithoutInvites]: any = await conn.query(`
+        SELECT e.id, e.created_by 
+        FROM events e 
+        WHERE e.status = 'PUBLISHED' 
+          AND NOT EXISTS (SELECT 1 FROM invite_links il WHERE il.event_id = e.id AND il.status = 'ACTIVE')
+      `);
+      if (Array.isArray(eventsWithoutInvites) && eventsWithoutInvites.length > 0) {
+        for (const ev of eventsWithoutInvites) {
+          const shortToken = await InvitesService.generateUniqueShortToken();
+          const refId = ev.created_by || 1;
+          const newSig = InvitesService.generateSignature(ev.id, refId, shortToken);
+          const expiresAt = new Date(Date.now() + 60 * 24 * 60 * 60 * 1000);
+          await conn.query(`
+            INSERT INTO invite_links (event_id, referrer_id, token, signature, expires_at, max_registrations, status)
+            VALUES (?, ?, ?, ?, ?, 1000, 'ACTIVE')
+          `, [ev.id, refId, shortToken, newSig, expiresAt]);
+        }
+        console.log(`✅ Đã tự động tạo link mời chính thức cho ${eventsWithoutInvites.length} sự kiện đang hoạt động.`);
       }
 
       conn.release();

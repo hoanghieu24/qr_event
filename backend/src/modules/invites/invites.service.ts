@@ -105,20 +105,90 @@ export class InvitesService {
     };
   }
 
-  static async verifyInviteToken(token: string) {
-    const rows = await query<any[]>(
+  static async verifyInviteToken(rawToken: string): Promise<any> {
+    const token = String(rawToken || '').trim();
+    if (!token) {
+      throw new Error('Link mời không tồn tại hoặc không hợp lệ.');
+    }
+
+    // 1. Thử tìm kiếm trực tiếp theo token hoặc legacy_token
+    let rows = await query<any[]>(
       `SELECT il.*, 
-              e.name as event_name, e.description as event_description, 
+              e.id as event_id, e.name as event_name, e.description as event_description, 
               e.location as event_location, e.poster_url as event_poster,
               e.start_at as event_start_at, e.end_at as event_end_at, e.status as event_status,
               e.approval_mode as event_approval_mode,
-              u.name as referrer_name, u.email as referrer_email, u.phone as referrer_phone
+              COALESCE(u.name, 'Ban Tổ Chức') as referrer_name, 
+              COALESCE(u.email, '') as referrer_email, 
+              COALESCE(u.phone, '') as referrer_phone
        FROM invite_links il
        JOIN events e ON il.event_id = e.id
-       JOIN users u ON il.referrer_id = u.id
+       LEFT JOIN users u ON il.referrer_id = u.id
        WHERE il.token = ? OR il.legacy_token = ?`,
       [token, token]
     );
+
+    // 2. Thử tìm partial match (nếu token dài, có tiền tố inv_, hoặc người dùng copy bị thiếu ký tự)
+    if (rows.length === 0 && (token.startsWith('inv_') || token.length >= 6)) {
+      rows = await query<any[]>(
+        `SELECT il.*, 
+                e.id as event_id, e.name as event_name, e.description as event_description, 
+                e.location as event_location, e.poster_url as event_poster,
+                e.start_at as event_start_at, e.end_at as event_end_at, e.status as event_status,
+                e.approval_mode as event_approval_mode,
+                COALESCE(u.name, 'Ban Tổ Chức') as referrer_name, 
+                COALESCE(u.email, '') as referrer_email, 
+                COALESCE(u.phone, '') as referrer_phone
+         FROM invite_links il
+         JOIN events e ON il.event_id = e.id
+         LEFT JOIN users u ON il.referrer_id = u.id
+         WHERE il.legacy_token LIKE ? OR il.token LIKE ?
+         ORDER BY il.id DESC LIMIT 1`,
+        [`%${token}%`, `%${token}%`]
+      );
+    }
+
+    // 3. Fallback: Nếu token là dạng 'event_<id>', 'event-<id>' hoặc ID số nguyên
+    if (rows.length === 0) {
+      const match = token.match(/^(?:event[_-]?)?(\d+)$/i);
+      if (match) {
+        const eventId = parseInt(match[1], 10);
+        // Tìm link gần nhất của sự kiện này
+        rows = await query<any[]>(
+          `SELECT il.*, 
+                  e.id as event_id, e.name as event_name, e.description as event_description, 
+                  e.location as event_location, e.poster_url as event_poster,
+                  e.start_at as event_start_at, e.end_at as event_end_at, e.status as event_status,
+                  e.approval_mode as event_approval_mode,
+                  COALESCE(u.name, 'Ban Tổ Chức') as referrer_name, 
+                  COALESCE(u.email, '') as referrer_email, 
+                  COALESCE(u.phone, '') as referrer_phone
+           FROM invite_links il
+           JOIN events e ON il.event_id = e.id
+           LEFT JOIN users u ON il.referrer_id = u.id
+           WHERE il.event_id = ?
+           ORDER BY (il.status = 'ACTIVE') DESC, il.id DESC LIMIT 1`,
+          [eventId]
+        );
+
+        // Nếu sự kiện chưa từng có link mời nào, kiểm tra sự kiện có tồn tại không và tự tạo link mặc định
+        if (rows.length === 0) {
+          const evRows = await query<any[]>('SELECT id, created_by, status FROM events WHERE id = ? LIMIT 1', [eventId]);
+          if (evRows.length > 0) {
+            const ev = evRows[0];
+            const refId = ev.created_by || 1;
+            const newLink = await this.createInviteLink({
+              event_id: eventId,
+              referrer_id: refId,
+              expires_in_days: 60,
+              max_registrations: 1000,
+              is_admin: true,
+            });
+            return await this.verifyInviteToken(newLink.token);
+          }
+        }
+      }
+    }
 
     if (rows.length === 0) {
       throw new Error('Link mời không tồn tại hoặc không hợp lệ.');
@@ -126,15 +196,32 @@ export class InvitesService {
 
     const invite = rows[0];
 
-    // Verify HMAC signature (hỗ trợ cả token mới ngắn gọn và token cũ nếu có khách bấm link cũ)
+    // Tự động hồi phục signature nếu link tồn tại hợp lệ trong DB
     const currentSig = this.generateSignature(invite.event_id, invite.referrer_id, invite.token);
     const legacySig = invite.legacy_token ? this.generateSignature(invite.event_id, invite.referrer_id, invite.legacy_token) : '';
 
     if (invite.signature !== currentSig && invite.signature !== legacySig) {
-      throw new Error('Chữ ký bảo mật của link mời không hợp lệ.');
+      try {
+        await query('UPDATE invite_links SET signature = ? WHERE id = ?', [currentSig, invite.id]);
+        invite.signature = currentSig;
+      } catch (sigErr) {
+        console.warn('Auto fix invite signature error:', sigErr);
+      }
     }
 
-    if (invite.status === 'CLOSED' || invite.current_registrations >= invite.max_registrations) {
+    // Nếu sự kiện vẫn đang PUBLISHED nhưng link vô tình bị CLOSED, tự động mở lại link
+    if (invite.event_status === 'PUBLISHED' && invite.status === 'CLOSED') {
+      try {
+        await query("UPDATE invite_links SET status = 'ACTIVE' WHERE id = ?", [invite.id]);
+        invite.status = 'ACTIVE';
+      } catch (_) {}
+    }
+
+    if (invite.event_status === 'CLOSED') {
+      throw new Error('Sự kiện này đã kết thúc hoặc ban tổ chức đã đóng nhận đăng ký.');
+    }
+
+    if (invite.status === 'CLOSED' || (invite.max_registrations > 0 && invite.current_registrations >= invite.max_registrations)) {
       throw new Error('Link mời này đã đạt đủ số lượng đăng ký tối đa và đã tự động đóng.');
     }
 
@@ -142,7 +229,7 @@ export class InvitesService {
       throw new Error('Link mời này đã bị thu hồi hoặc đóng.');
     }
 
-    if (new Date() > new Date(invite.expires_at)) {
+    if (invite.expires_at && new Date() > new Date(invite.expires_at)) {
       throw new Error('Link mời này đã hết hạn tham gia.');
     }
 

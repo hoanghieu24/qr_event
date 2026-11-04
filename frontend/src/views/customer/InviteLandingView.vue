@@ -108,6 +108,10 @@ const loadInvite = async () => {
   try {
     const res = await api.get(`/invites/verify/${token}`);
     inviteData.value = res.data.data;
+    if (inviteData.value?.token && inviteData.value.token !== token) {
+      // Tự động cập nhật URL thành link rút gọn mới mà không reload trang
+      window.history.replaceState({}, '', `/invite/${inviteData.value.token}`);
+    }
     if (auth.user) {
       form.value.full_name = auth.user.name || form.value.full_name;
       form.value.email = auth.user.email || form.value.email;
@@ -195,7 +199,8 @@ const handleSubmitRegistration = async () => {
   formError.value = '';
   isSubmitting.value = true;
   try {
-    const res = await api.post('/registrations', { token, ...form.value });
+    const activeToken = inviteData.value?.token || token;
+    const res = await api.post('/registrations', { token: activeToken, ...form.value });
     if (res.data?.data?.token) {
       auth.token = res.data.data.token;
       auth.user = res.data.data.user;
@@ -226,11 +231,28 @@ const handleSubmitRegistration = async () => {
 
     <!-- ERROR -->
     <div v-else-if="error" class="grid min-h-[100dvh] place-items-center px-4">
-      <div class="card card-pad w-full max-w-sm animate-scale-in text-center">
+      <div class="card card-pad w-full max-w-sm animate-scale-in text-center space-y-4">
         <div class="mx-auto grid h-14 w-14 place-items-center rounded-2xl bg-rose-50 text-rose-600"><X class="h-7 w-7" /></div>
-        <h2 class="mt-4 text-lg font-bold text-slate-900">Link mời không khả dụng</h2>
-        <p class="mt-1.5 text-sm text-slate-500">{{ error }}</p>
-        <p class="mt-4 text-xs text-slate-400">Vui lòng liên hệ người đã gửi link cho bạn để nhận link mới.</p>
+        <div>
+          <h2 class="text-lg font-bold text-slate-900">Link mời không khả dụng</h2>
+          <p class="mt-1.5 text-sm text-slate-500 leading-relaxed">{{ error }}</p>
+        </div>
+        <p class="text-xs text-slate-400">Vui lòng liên hệ người đã gửi link cho bạn để nhận link mới hoặc kiểm tra lại đường dẫn.</p>
+        <div class="pt-2 flex flex-col gap-2">
+          <button
+            type="button"
+            @click="loadInvite()"
+            class="w-full py-2.5 px-4 rounded-xl bg-primary-700 hover:bg-primary-800 text-white text-xs font-bold transition cursor-pointer"
+          >
+            Thử tải lại
+          </button>
+          <router-link
+            to="/khach"
+            class="w-full py-2 px-4 rounded-xl border border-slate-200 text-slate-700 hover:bg-slate-50 text-xs font-semibold text-center transition block"
+          >
+            Về Cổng Khách Mời & Tra Cứu Vé
+          </router-link>
+        </div>
       </div>
     </div>
 

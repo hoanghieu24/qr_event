@@ -20,6 +20,7 @@ router.get('/portal/events', authenticate, requireTenantAdmin, TenantsController
 router.post('/portal/events', authenticate, requireTenantAdmin, TenantsController.createEvent);
 router.put('/portal/events/:eventId', authenticate, requireTenantAdmin, TenantsController.updateEvent);
 router.post('/portal/events/:eventId/close', authenticate, requireTenantAdmin, TenantsController.closeEvent);
+router.post('/portal/events/:eventId/reopen', authenticate, requireTenantAdmin, TenantsController.reopenEvent);
 router.get('/portal/events/:eventId/attendees', authenticate, requireTenantAdmin, TenantsController.attendees);
 router.get('/portal/team', authenticate, requireTenantAdmin, TenantsController.listTeam);
 router.get('/portal/search-users', authenticate, requireTenantAdmin, TenantsController.searchUsers);

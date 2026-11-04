@@ -87,6 +87,11 @@ export class EventsService {
     const currentStatus = events[0].status;
     const newStatus = currentStatus === 'PUBLISHED' ? 'CLOSED' : 'PUBLISHED';
     await query('UPDATE events SET status = ? WHERE id = ?', [newStatus, id]);
+    if (newStatus === 'PUBLISHED') {
+      await query("UPDATE invite_links SET status = 'ACTIVE' WHERE event_id = ?", [id]);
+    } else {
+      await query("UPDATE invite_links SET status = 'CLOSED' WHERE event_id = ? AND status = 'ACTIVE'", [id]);
+    }
     Realtime.emitDashboardRefresh();
     return {
       success: true,

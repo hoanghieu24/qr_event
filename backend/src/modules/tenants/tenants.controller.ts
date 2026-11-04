@@ -169,6 +169,14 @@ export class TenantsController {
     }
   }
 
+  static async reopenEvent(req: Request, res: Response) {
+    try {
+      res.json({ success: true, data: await TenantsService.reopenEvent(Number(req.user!.tenantId), Number(req.params.eventId)) });
+    } catch (error: any) {
+      res.status(400).json({ success: false, message: error.message });
+    }
+  }
+
   static async attendees(req: Request, res: Response) {
     try {
       res.json({ success: true, data: await TenantsService.getAttendees(Number(req.user!.tenantId), Number(req.params.eventId)) });

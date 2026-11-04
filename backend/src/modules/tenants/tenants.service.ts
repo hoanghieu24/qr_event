@@ -555,6 +555,14 @@ export class TenantsService {
     return { success: true, status: 'CLOSED' };
   }
 
+  static async reopenEvent(tenantId: number, eventId: number) {
+    await this.requireTenantEvent(tenantId, eventId);
+    await query("UPDATE events SET status = 'PUBLISHED' WHERE id = ? AND tenant_id = ?", [eventId, tenantId]);
+    await query("UPDATE invite_links SET status = 'ACTIVE' WHERE event_id = ?", [eventId]);
+    Realtime.emitDashboardRefresh();
+    return { success: true, status: 'PUBLISHED' };
+  }
+
   static async updateEvent(tenantId: number, eventId: number, data: {
     name?: string;
     description?: string;
@@ -891,10 +899,10 @@ export class TenantsService {
           const shortToken = await InvitesService.generateUniqueShortToken();
           const newSig = InvitesService.generateSignature(r.event_id, r.referrer_id, shortToken);
           await query(
-            'UPDATE invite_links SET legacy_token = token, token = ?, signature = ? WHERE id = ?',
+            'UPDATE invite_links SET legacy_token = COALESCE(legacy_token, token), token = ?, signature = ? WHERE id = ?',
             [shortToken, newSig, r.id]
           );
-          r.legacy_token = r.token;
+          r.legacy_token = r.legacy_token || r.token;
           r.token = shortToken;
           r.signature = newSig;
         } catch (e) {
