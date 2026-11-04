@@ -27,8 +27,8 @@ router.get('/summary', authenticate, requirePermission('reports:view'), async (r
       `SELECT COUNT(*) as total FROM disputes d JOIN tickets t ON t.id = d.ticket_id JOIN events e ON e.id = t.event_id WHERE d.decision = 'PENDING' ${eventScope}`,
       isStaff ? [staffId] : []
     );
-    const staffRows: any = await query('SELECT COUNT(*) as total FROM users WHERE type = "STAFF"');
-    const customersRows: any = await query('SELECT COUNT(*) as total FROM users WHERE type = "CUSTOMER"');
+    const staffRows: any = await query("SELECT COUNT(*) as total FROM users WHERE type = 'STAFF'");
+    const customersRows: any = await query("SELECT COUNT(*) as total FROM users WHERE type = 'CUSTOMER'");
 
     const eventsCount = eventsRows[0] || { total: 0 };
     const ticketsCount = ticketsRows[0] || { total: 0 };

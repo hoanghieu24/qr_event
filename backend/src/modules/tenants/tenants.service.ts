@@ -858,7 +858,7 @@ export class TenantsService {
         let refId: number = Number(adminUserId || 0);
         if (!refId) {
           const tenantOwners = await query<any[]>(
-            'SELECT tu.user_id FROM tenant_users tu WHERE tu.tenant_id = ? AND tu.role = "OWNER" LIMIT 1',
+            "SELECT tu.user_id FROM tenant_users tu WHERE tu.tenant_id = ? AND tu.role = 'OWNER' LIMIT 1",
             [tenantId]
           );
           refId = tenantOwners[0]?.user_id ? Number(tenantOwners[0].user_id) : 0;

@@ -160,7 +160,7 @@ export class EventsService {
     let capacity = data.capacity || 500;
 
     if (data.tenant_id) {
-      const [tenants]: any = await query('SELECT id, name FROM tenants WHERE id = ? AND status = "ACTIVE"', [data.tenant_id]);
+      const [tenants]: any = await query("SELECT id, name FROM tenants WHERE id = ? AND status = 'ACTIVE'", [data.tenant_id]);
       if (!tenants) throw new Error('Khách thuê không tồn tại hoặc đang bị khóa.');
 
       if (data.plan_id) {

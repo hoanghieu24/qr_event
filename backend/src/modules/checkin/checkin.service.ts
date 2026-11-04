@@ -332,14 +332,17 @@ export class CheckinService {
   private static async requireCanScan(staffId: number, eventId: number, isAdmin: boolean) {
     if (isAdmin) return;
 
-    // Check if user is owner of the event's tenant
-    const events = await query<any[]>('SELECT tenant_id FROM events WHERE id = ?', [eventId]);
-    if (events?.length && events[0].tenant_id) {
-      const owners = await query<any[]>(
-        'SELECT 1 FROM tenant_users WHERE tenant_id = ? AND user_id = ? AND role = "OWNER"',
-        [events[0].tenant_id, staffId]
-      );
-      if (owners.length > 0) return;
+    // Check if user is owner of the event's tenant or creator of the event
+    const events = await query<any[]>('SELECT tenant_id, created_by FROM events WHERE id = ?', [eventId]);
+    if (events?.length) {
+      if (events[0].created_by && Number(events[0].created_by) === Number(staffId)) return;
+      if (events[0].tenant_id) {
+        const owners = await query<any[]>(
+          "SELECT 1 FROM tenant_users WHERE tenant_id = ? AND user_id = ? AND role = 'OWNER'",
+          [events[0].tenant_id, staffId]
+        );
+        if (owners.length > 0) return;
+      }
     }
 
     const rows = await query<any[]>(

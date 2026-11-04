@@ -12,6 +12,7 @@ export class CheckinController {
       }
 
       const ip = req.ip || req.socket.remoteAddress;
+      const isAdmin = req.user.type === 'ADMIN' || req.user.type === 'TENANT_ADMIN';
       const result = await CheckinService.scanQr(
         req.user.id,
         parseInt(event_id, 10),
@@ -20,7 +21,7 @@ export class CheckinController {
         ip,
         lat !== undefined ? Number(lat) : undefined,
         lng !== undefined ? Number(lng) : undefined,
-        req.user.type === 'ADMIN'
+        isAdmin
       );
 
       if (result.result === 'INVALID') {
@@ -42,7 +43,8 @@ export class CheckinController {
       }
 
       if (!req.user) return;
-      const tickets = await CheckinService.getOfflineCache(eventId, req.user.id, req.user.type === 'ADMIN');
+      const isAdmin = req.user.type === 'ADMIN' || req.user.type === 'TENANT_ADMIN';
+      const tickets = await CheckinService.getOfflineCache(eventId, req.user.id, isAdmin);
       res.json({ success: true, data: tickets });
     } catch (error: any) {
       res.status(error.message.includes('chưa được phân quyền') ? 403 : 500).json({ success: false, message: error.message });
@@ -59,12 +61,13 @@ export class CheckinController {
       }
 
       const ip = req.ip || req.socket.remoteAddress;
+      const isAdmin = req.user.type === 'ADMIN' || req.user.type === 'TENANT_ADMIN';
       const result = await CheckinService.syncBatch(
         req.user.id,
         parseInt(event_id, 10),
         scans,
         ip,
-        req.user.type === 'ADMIN'
+        isAdmin
       );
 
       res.json({ success: true, data: result });
@@ -77,7 +80,8 @@ export class CheckinController {
     try {
       if (!req.user) return;
       const eventId = parseInt(String(req.params.eventId), 10);
-      const logs = await CheckinService.getRecentLogs(eventId, req.user.id, req.user.type === 'ADMIN');
+      const isAdmin = req.user.type === 'ADMIN' || req.user.type === 'TENANT_ADMIN';
+      const logs = await CheckinService.getRecentLogs(eventId, req.user.id, isAdmin);
       res.json({ success: true, data: logs });
     } catch (error: any) {
       res.status(error.message.includes('chưa được phân quyền') ? 403 : 400).json({ success: false, message: error.message });
