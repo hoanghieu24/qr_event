@@ -122,9 +122,12 @@ export class EventsService {
     name: string;
     description?: string;
     location: string;
+    map_url?: string;
+    info_url?: string;
     poster_base64?: string;
     start_at: string;
     end_at: string;
+    registration_deadline?: string | null;
     capacity?: number;
     approval_mode?: 'REFERRER_ONLY' | 'TWO_TIER' | 'AUTO';
     latitude?: number;
@@ -181,15 +184,18 @@ export class EventsService {
     const paidAt = paymentStatus === 'PAID' ? new Date() : null;
 
     const res: any = await query(
-      `INSERT INTO events (name, description, location, poster_url, start_at, end_at, capacity, approval_mode, latitude, longitude, geofence_radius_meters, geofence_enabled, status, created_by, tenant_id, package_name, max_employees, max_referrers, max_scanners, package_price_vnd, is_trial, payment_status, payment_note, paid_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'PUBLISHED', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      `INSERT INTO events (name, description, location, map_url, info_url, poster_url, start_at, end_at, registration_deadline, capacity, approval_mode, latitude, longitude, geofence_radius_meters, geofence_enabled, status, created_by, tenant_id, package_name, max_employees, max_referrers, max_scanners, package_price_vnd, is_trial, payment_status, payment_note, paid_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'PUBLISHED', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       [
         data.name,
         data.description || null,
         data.location,
+        data.map_url || null,
+        data.info_url || null,
         posterUrl,
         data.start_at,
         data.end_at,
+        data.registration_deadline || null,
         capacity,
         data.approval_mode || 'REFERRER_ONLY',
         data.latitude || null,
@@ -278,8 +284,11 @@ export class EventsService {
     if (data.name) { fields.push('name = ?'); values.push(data.name); }
     if (data.description !== undefined) { fields.push('description = ?'); values.push(data.description); }
     if (data.location) { fields.push('location = ?'); values.push(data.location); }
+    if (data.map_url !== undefined) { fields.push('map_url = ?'); values.push(data.map_url || null); }
+    if (data.info_url !== undefined) { fields.push('info_url = ?'); values.push(data.info_url || null); }
     if (data.start_at) { fields.push('start_at = ?'); values.push(data.start_at); }
     if (data.end_at) { fields.push('end_at = ?'); values.push(data.end_at); }
+    if (data.registration_deadline !== undefined) { fields.push('registration_deadline = ?'); values.push(data.registration_deadline || null); }
     if (data.capacity) { fields.push('capacity = ?'); values.push(data.capacity); }
     if (data.approval_mode) { fields.push('approval_mode = ?'); values.push(data.approval_mode); }
     if (data.status) { fields.push('status = ?'); values.push(data.status); }

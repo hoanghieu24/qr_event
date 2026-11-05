@@ -81,6 +81,17 @@ async function bootstrap() {
         // Cột đã tồn tại
       }
 
+      // Tự động đảm bảo các cột registration_deadline, map_url, info_url trong bảng events
+      try {
+        await conn.query(`ALTER TABLE events ADD COLUMN registration_deadline DATETIME NULL AFTER end_at`);
+      } catch (_) {}
+      try {
+        await conn.query(`ALTER TABLE events ADD COLUMN map_url VARCHAR(500) NULL AFTER location`);
+      } catch (_) {}
+      try {
+        await conn.query(`ALTER TABLE events ADD COLUMN info_url VARCHAR(500) NULL AFTER description`);
+      } catch (_) {}
+
       const [longLinks]: any = await conn.query(`
         SELECT id, event_id, referrer_id, token 
         FROM invite_links 

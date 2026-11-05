@@ -332,6 +332,7 @@ export class TenantsService {
 
   static async createEvent(tenantId: number, userId: number, data: {
     name: string; description?: string; location: string; poster_base64?: string;
+    map_url?: string; info_url?: string; registration_deadline?: string | null;
     start_at: string; end_at: string; capacity?: number;
     event_package_id?: number | string;
     plan_id?: number | string;
@@ -437,12 +438,13 @@ export class TenantsService {
       const paidAt = paymentStatus === 'PAID' ? new Date() : null;
 
       const [result]: any = await conn.query(`
-        INSERT INTO events (name, description, location, poster_url, start_at, end_at, capacity,
+        INSERT INTO events (name, description, location, map_url, info_url, poster_url, start_at, end_at, registration_deadline, capacity,
           approval_mode, status, created_by, tenant_id, package_request_id, package_name,
           max_employees, max_referrers, max_scanners, package_price_vnd, is_trial, payment_status, paid_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'PUBLISHED', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'PUBLISHED', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       `, [
-        data.name, data.description || null, data.location, posterUrl, data.start_at, data.end_at,
+        data.name, data.description || null, data.location, data.map_url || null, data.info_url || null,
+        posterUrl, data.start_at, data.end_at, data.registration_deadline || null,
         finalCapacity, data.approval_mode || 'REFERRER_ONLY', userId, tenantId,
         packageRequestId, packageInfo.name, packageInfo.max_employees, packageInfo.max_referrers,
         packageInfo.max_scanners, packageInfo.price_vnd, quotaSource === 'FREE' ? 1 : 0,
@@ -567,8 +569,11 @@ export class TenantsService {
     name?: string;
     description?: string;
     location?: string;
+    map_url?: string;
+    info_url?: string;
     start_at?: string;
     end_at?: string;
+    registration_deadline?: string | null;
     capacity?: number;
     approval_mode?: string;
   }) {
@@ -589,8 +594,11 @@ export class TenantsService {
     if (data.name) { fields.push('name = ?'); values.push(data.name.trim()); }
     if (data.description !== undefined) { fields.push('description = ?'); values.push(data.description ? data.description.trim() : null); }
     if (data.location) { fields.push('location = ?'); values.push(data.location.trim()); }
+    if (data.map_url !== undefined) { fields.push('map_url = ?'); values.push(data.map_url ? data.map_url.trim() : null); }
+    if (data.info_url !== undefined) { fields.push('info_url = ?'); values.push(data.info_url ? data.info_url.trim() : null); }
     if (data.start_at) { fields.push('start_at = ?'); values.push(data.start_at); }
     if (data.end_at) { fields.push('end_at = ?'); values.push(data.end_at); }
+    if (data.registration_deadline !== undefined) { fields.push('registration_deadline = ?'); values.push(data.registration_deadline || null); }
     if (data.approval_mode) { fields.push('approval_mode = ?'); values.push(data.approval_mode); }
     if (data.capacity) {
       const cap = Number(data.capacity);

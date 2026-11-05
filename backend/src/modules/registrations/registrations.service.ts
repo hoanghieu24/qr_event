@@ -28,8 +28,8 @@ export class RegistrationsService {
     email: string;
     address?: string;
   }) {
-    // 1. Verify invite link token
-    const invite = await InvitesService.verifyInviteToken(data.token);
+    // 1. Verify invite link token (strict: ném lỗi nếu link đã hết hạn hoặc sự kiện đã đóng)
+    const invite = await InvitesService.verifyInviteToken(data.token, { strict: true });
 
     // 2. Identify or create customer account by email
     let actualCustomerId = customerId;
@@ -65,20 +65,31 @@ export class RegistrationsService {
     }
 
     return await withTransaction(async (conn) => {
-      // 4. Fetch event details including approval_mode
+      // 4. Fetch event details including approval_mode, dates, and registration deadline
       const [evRows]: any = await conn.query(
-        'SELECT approval_mode, name, location, start_at, capacity, status FROM events WHERE id = ? FOR UPDATE',
+        'SELECT approval_mode, name, location, start_at, end_at, registration_deadline, capacity, status FROM events WHERE id = ? FOR UPDATE',
         [invite.event_id]
       );
       const eventDetails = evRows[0] || {};
+      if (eventDetails.status && eventDetails.status !== 'PUBLISHED') {
+        throw new Error('Sự kiện này đã đóng nhận đăng ký.');
+      }
+      const now = new Date();
+      if (eventDetails.end_at && now > new Date(eventDetails.end_at)) {
+        throw new Error('Sự kiện này đã kết thúc, cổng đăng ký đã tự động đóng.');
+      }
+      const deadline = eventDetails.registration_deadline
+        ? new Date(eventDetails.registration_deadline)
+        : (eventDetails.start_at ? new Date(eventDetails.start_at) : null);
+      if (deadline && now > deadline) {
+        const deadlineStr = deadline.toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' }) + ' ngày ' + deadline.toLocaleDateString('vi-VN');
+        throw new Error(`Đã hết thời hạn đăng ký sự kiện (Hạn chót: ${deadlineStr}). Cổng đăng ký đã tự động đóng.`);
+      }
       if (eventDetails.capacity) {
         const [countRows]: any = await conn.query('SELECT COUNT(*) AS total FROM registrations WHERE event_id = ?', [invite.event_id]);
         if (Number(countRows[0]?.total || 0) >= Number(eventDetails.capacity)) {
-          throw new Error('Sự kiện đã đạt giới hạn khách tham gia theo gói.');
+          throw new Error(`Sự kiện đã đạt giới hạn khách tham gia tối đa (${eventDetails.capacity} khách). Cổng đăng ký đã đóng.`);
         }
-      }
-      if (eventDetails.status && eventDetails.status !== 'PUBLISHED') {
-        throw new Error('Sự kiện đã đóng đăng ký.');
       }
       const approvalMode = eventDetails.approval_mode || 'REFERRER_ONLY';
 

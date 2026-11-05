@@ -56,9 +56,15 @@ export class InvitesController {
             name: invite.event_name,
             description: invite.event_description,
             location: invite.event_location,
+            map_url: invite.event_map_url,
+            info_url: invite.event_info_url,
             poster_url: invite.event_poster,
             start_at: invite.event_start_at,
             end_at: invite.event_end_at,
+            registration_deadline: invite.event_registration_deadline,
+            capacity: invite.event_capacity,
+            current_registrations: Number(invite.current_event_registrations || 0),
+            status: invite.event_status,
           },
           referrer: {
             id: invite.referrer_id,
@@ -67,6 +73,8 @@ export class InvitesController {
             email: invite.referrer_email,
           },
           expires_at: invite.expires_at,
+          is_registration_closed: Boolean(invite.is_registration_closed),
+          closure_reason: invite.closure_reason || '',
         },
       });
     } catch (error: any) {

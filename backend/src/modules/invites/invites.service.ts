@@ -105,22 +105,29 @@ export class InvitesService {
     };
   }
 
-  static async verifyInviteToken(rawToken: string): Promise<any> {
+  static async verifyInviteToken(rawToken: string, options?: { strict?: boolean }): Promise<any> {
     const token = String(rawToken || '').trim();
     if (!token) {
       throw new Error('Link mời không tồn tại hoặc không hợp lệ.');
     }
 
+    const selectFields = `
+      il.*, 
+      e.id as event_id, e.name as event_name, e.description as event_description, 
+      e.location as event_location, e.map_url as event_map_url, e.info_url as event_info_url,
+      e.poster_url as event_poster, e.capacity as event_capacity,
+      e.start_at as event_start_at, e.end_at as event_end_at, 
+      e.registration_deadline as event_registration_deadline,
+      e.status as event_status, e.approval_mode as event_approval_mode,
+      (SELECT COUNT(*) FROM registrations r WHERE r.event_id = e.id) as current_event_registrations,
+      COALESCE(u.name, 'Ban Tổ Chức') as referrer_name, 
+      COALESCE(u.email, '') as referrer_email, 
+      COALESCE(u.phone, '') as referrer_phone
+    `;
+
     // 1. Thử tìm kiếm trực tiếp theo token hoặc legacy_token
     let rows = await query<any[]>(
-      `SELECT il.*, 
-              e.id as event_id, e.name as event_name, e.description as event_description, 
-              e.location as event_location, e.poster_url as event_poster,
-              e.start_at as event_start_at, e.end_at as event_end_at, e.status as event_status,
-              e.approval_mode as event_approval_mode,
-              COALESCE(u.name, 'Ban Tổ Chức') as referrer_name, 
-              COALESCE(u.email, '') as referrer_email, 
-              COALESCE(u.phone, '') as referrer_phone
+      `SELECT ${selectFields}
        FROM invite_links il
        JOIN events e ON il.event_id = e.id
        LEFT JOIN users u ON il.referrer_id = u.id
@@ -131,14 +138,7 @@ export class InvitesService {
     // 2. Thử tìm partial match (nếu token dài, có tiền tố inv_, hoặc người dùng copy bị thiếu ký tự)
     if (rows.length === 0 && (token.startsWith('inv_') || token.length >= 6)) {
       rows = await query<any[]>(
-        `SELECT il.*, 
-                e.id as event_id, e.name as event_name, e.description as event_description, 
-                e.location as event_location, e.poster_url as event_poster,
-                e.start_at as event_start_at, e.end_at as event_end_at, e.status as event_status,
-                e.approval_mode as event_approval_mode,
-                COALESCE(u.name, 'Ban Tổ Chức') as referrer_name, 
-                COALESCE(u.email, '') as referrer_email, 
-                COALESCE(u.phone, '') as referrer_phone
+        `SELECT ${selectFields}
          FROM invite_links il
          JOIN events e ON il.event_id = e.id
          LEFT JOIN users u ON il.referrer_id = u.id
@@ -155,14 +155,7 @@ export class InvitesService {
         const eventId = parseInt(match[1], 10);
         // Tìm link gần nhất của sự kiện này
         rows = await query<any[]>(
-          `SELECT il.*, 
-                  e.id as event_id, e.name as event_name, e.description as event_description, 
-                  e.location as event_location, e.poster_url as event_poster,
-                  e.start_at as event_start_at, e.end_at as event_end_at, e.status as event_status,
-                  e.approval_mode as event_approval_mode,
-                  COALESCE(u.name, 'Ban Tổ Chức') as referrer_name, 
-                  COALESCE(u.email, '') as referrer_email, 
-                  COALESCE(u.phone, '') as referrer_phone
+          `SELECT ${selectFields}
            FROM invite_links il
            JOIN events e ON il.event_id = e.id
            LEFT JOIN users u ON il.referrer_id = u.id
@@ -184,7 +177,7 @@ export class InvitesService {
               max_registrations: 1000,
               is_admin: true,
             });
-            return await this.verifyInviteToken(newLink.token);
+            return await this.verifyInviteToken(newLink.token, options);
           }
         }
       }
@@ -209,7 +202,7 @@ export class InvitesService {
       }
     }
 
-    // Nếu sự kiện vẫn đang PUBLISHED nhưng link vô tình bị CLOSED, tự động mở lại link
+    // Nếu sự kiện vẫn đang PUBLISHED nhưng link vô tình bị CLOSED, tự động mở lại link (nếu chưa quá hạn)
     if (invite.event_status === 'PUBLISHED' && invite.status === 'CLOSED') {
       try {
         await query("UPDATE invite_links SET status = 'ACTIVE' WHERE id = ?", [invite.id]);
@@ -217,20 +210,48 @@ export class InvitesService {
       } catch (_) {}
     }
 
-    if (invite.event_status === 'CLOSED') {
-      throw new Error('Sự kiện này đã kết thúc hoặc ban tổ chức đã đóng nhận đăng ký.');
+    // Đánh giá trạng thái đóng/mở đăng ký
+    const now = new Date();
+    const eventEnd = invite.event_end_at ? new Date(invite.event_end_at) : null;
+    const eventStart = invite.event_start_at ? new Date(invite.event_start_at) : null;
+    const deadline = invite.event_registration_deadline
+      ? new Date(invite.event_registration_deadline)
+      : eventStart;
+
+    let isClosed = false;
+    let closureReason = '';
+
+    if (invite.event_status === 'CLOSED' || invite.event_status === 'CANCELLED') {
+      isClosed = true;
+      closureReason = 'Ban tổ chức đã đóng cổng đăng ký cho sự kiện này.';
+    } else if (eventEnd && now > eventEnd) {
+      isClosed = true;
+      const endStr = eventEnd.toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' }) + ' ngày ' + eventEnd.toLocaleDateString('vi-VN');
+      closureReason = `Sự kiện đã kết thúc (${endStr}). Cổng đăng ký đã đóng.`;
+    } else if (deadline && now > deadline) {
+      isClosed = true;
+      const dlStr = deadline.toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' }) + ' ngày ' + deadline.toLocaleDateString('vi-VN');
+      closureReason = `Đã hết thời hạn đăng ký sự kiện (Hạn chót: ${dlStr}). Cổng đăng ký đã tự động đóng.`;
+    } else if (invite.event_capacity > 0 && Number(invite.current_event_registrations) >= Number(invite.event_capacity)) {
+      isClosed = true;
+      closureReason = `Sự kiện đã đạt số lượng khách tham dự tối đa (${invite.event_capacity} khách). Cổng đăng ký đã đóng.`;
+    } else if (invite.status === 'CLOSED' || (invite.max_registrations > 0 && invite.current_registrations >= invite.max_registrations)) {
+      isClosed = true;
+      closureReason = 'Link mời này đã đạt đủ số lượng khách đăng ký tối đa.';
+    } else if (invite.status !== 'ACTIVE') {
+      isClosed = true;
+      closureReason = 'Link mời này hiện đang tạm dừng hoạt động.';
+    } else if (invite.expires_at && now > new Date(invite.expires_at)) {
+      isClosed = true;
+      closureReason = 'Link mời này đã hết thời hạn sử dụng.';
     }
 
-    if (invite.status === 'CLOSED' || (invite.max_registrations > 0 && invite.current_registrations >= invite.max_registrations)) {
-      throw new Error('Link mời này đã đạt đủ số lượng đăng ký tối đa và đã tự động đóng.');
-    }
+    invite.is_registration_closed = isClosed;
+    invite.closure_reason = closureReason;
 
-    if (invite.status !== 'ACTIVE') {
-      throw new Error('Link mời này đã bị thu hồi hoặc đóng.');
-    }
-
-    if (invite.expires_at && new Date() > new Date(invite.expires_at)) {
-      throw new Error('Link mời này đã hết hạn tham gia.');
+    // Nếu gọi với strict: true (ví dụ khi gửi đăng ký form), chặn và ném lỗi nếu đã đóng
+    if (options?.strict && isClosed) {
+      throw new Error(closureReason || 'Cổng đăng ký sự kiện hiện đã đóng.');
     }
 
     return invite;

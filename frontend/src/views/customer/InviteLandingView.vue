@@ -19,7 +19,11 @@ import {
   KeyRound,
   LogIn,
   Eye,
-  EyeOff
+  EyeOff,
+  AlertTriangle,
+  ExternalLink,
+  Users,
+  Navigation
 } from 'lucide-vue-next';
 import api from '../../api/client';
 import { useAuthStore } from '../../stores/auth';
@@ -88,6 +92,70 @@ const timeLabel = computed(() => {
 const dayNum = computed(() => startAt.value?.getDate().toString().padStart(2, '0'));
 const monthLabel = computed(() => (startAt.value ? `TH ${startAt.value.getMonth() + 1}` : ''));
 
+const regDeadlineDate = computed(() => {
+  if (event.value.registration_deadline) {
+    const d = new Date(event.value.registration_deadline);
+    return isNaN(d.getTime()) ? null : d;
+  }
+  return startAt.value;
+});
+
+const regDeadlineLabel = computed(() => {
+  if (!regDeadlineDate.value) return '';
+  return (
+    regDeadlineDate.value.toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' }) +
+    ', ' +
+    regDeadlineDate.value.toLocaleDateString('vi-VN', { day: '2-digit', month: '2-digit', year: 'numeric' })
+  );
+});
+
+const isRegistrationClosed = computed(() => {
+  if (inviteData.value?.is_registration_closed) return true;
+  const now = new Date();
+  if (endAt.value && now > endAt.value) return true;
+  if (regDeadlineDate.value && now > regDeadlineDate.value) return true;
+  if (event.value?.capacity && Number(event.value?.current_registrations || 0) >= Number(event.value.capacity)) return true;
+  return false;
+});
+
+const closureReason = computed(() => {
+  if (inviteData.value?.closure_reason) return inviteData.value.closure_reason;
+  const now = new Date();
+  if (endAt.value && now > endAt.value) {
+    return 'Sự kiện đã kết thúc, cổng đăng ký đã tự động đóng.';
+  }
+  if (regDeadlineDate.value && now > regDeadlineDate.value) {
+    return `Đã hết thời hạn đăng ký (Hạn chót: ${regDeadlineLabel.value}).`;
+  }
+  if (event.value?.capacity && Number(event.value?.current_registrations || 0) >= Number(event.value.capacity)) {
+    return 'Sự kiện đã đạt số lượng khách tối đa (Đã hết chỗ).';
+  }
+  return 'Cổng tiếp nhận đăng ký hiện đã đóng.';
+});
+
+const googleMapsUrl = computed(() => {
+  if (event.value.map_url) return event.value.map_url;
+  if (event.value.location) {
+    return `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(event.value.location)}`;
+  }
+  return '';
+});
+
+const infoUrl = computed(() => event.value.info_url || '');
+
+const spotsInfo = computed(() => {
+  if (!event.value.capacity) return null;
+  const total = Number(event.value.capacity);
+  const current = Number(event.value.current_registrations || 0);
+  const remaining = Math.max(0, total - current);
+  return {
+    total,
+    current,
+    remaining,
+    isFull: remaining === 0
+  };
+});
+
 const youtubeEmbed = computed(() => {
   const url: string = event.value.video_url || '';
   const m = url.match(/(?:youtube\.com\/(?:watch\?v=|embed\/|shorts\/)|youtu\.be\/)([\w-]{11})/);
@@ -127,6 +195,7 @@ const loadInvite = async () => {
 onMounted(loadInvite);
 
 const chooseConfirm = () => {
+  if (isRegistrationClosed.value) return;
   actionChosen.value = 'confirm';
   requestAnimationFrame(() => document.getElementById('register')?.scrollIntoView({ behavior: 'smooth', block: 'start' }));
 };
@@ -322,23 +391,93 @@ const handleSubmitRegistration = async () => {
         </section>
 
         <template v-else>
+          <!-- Registration Status Alert (Closed / Open) -->
+          <div v-if="isRegistrationClosed" class="mt-4 flex items-start gap-3 rounded-2xl border border-rose-200 bg-rose-50/90 p-4 text-rose-900 shadow-sm sm:mt-6">
+            <div class="grid h-10 w-10 shrink-0 place-items-center rounded-xl bg-rose-100 text-rose-600">
+              <AlertTriangle class="h-5 w-5" />
+            </div>
+            <div class="min-w-0 flex-1">
+              <div class="flex items-center gap-2">
+                <span class="inline-flex items-center gap-1.5 rounded-full bg-rose-600 px-2.5 py-0.5 text-[11px] font-bold uppercase tracking-wider text-white">
+                  Cổng đăng ký đã đóng
+                </span>
+              </div>
+              <p class="mt-1 text-sm font-semibold text-rose-900 leading-snug">{{ closureReason }}</p>
+              <p class="mt-0.5 text-xs text-rose-700">Rất tiếc sự kiện hiện không thể tiếp nhận thêm lượt đăng ký mới.</p>
+            </div>
+          </div>
+
+          <div v-else class="mt-4 flex flex-wrap items-center justify-between gap-2 rounded-2xl border border-emerald-200/80 bg-emerald-50/70 px-4 py-2.5 text-emerald-900 shadow-sm sm:mt-6">
+            <div class="flex items-center gap-2">
+              <span class="relative flex h-2.5 w-2.5">
+                <span class="absolute inline-flex h-full w-full animate-ping rounded-full bg-emerald-400 opacity-75"></span>
+                <span class="relative inline-flex h-2.5 w-2.5 rounded-full bg-emerald-500"></span>
+              </span>
+              <span class="text-xs font-bold uppercase tracking-wider text-emerald-800">Cổng đăng ký đang mở</span>
+            </div>
+            <div v-if="regDeadlineLabel" class="text-xs font-medium text-emerald-700">
+              Hạn chót: <span class="font-bold text-emerald-900">{{ regDeadlineLabel }}</span>
+            </div>
+          </div>
+
           <!-- Info -->
-          <section class="mt-5 grid gap-3 sm:mt-6 sm:grid-cols-[auto_1fr]">
+          <section class="mt-4 grid gap-3 sm:mt-5 sm:grid-cols-[auto_1fr]">
             <div v-if="startAt" class="hidden w-20 flex-col items-center justify-center rounded-2xl bg-primary-600 py-3 text-white shadow-glow sm:flex">
               <span class="text-[11px] font-bold tracking-wider opacity-80">{{ monthLabel }}</span>
               <span class="text-3xl font-extrabold leading-none">{{ dayNum }}</span>
             </div>
-            <div class="card divide-y divide-slate-100">
+            <div class="card divide-y divide-slate-100 overflow-hidden">
+              <!-- Event start/end time -->
               <div class="flex items-start gap-3.5 p-4">
                 <span class="grid h-10 w-10 shrink-0 place-items-center rounded-xl bg-primary-50 text-primary-600"><CalendarDays class="h-5 w-5" /></span>
                 <div class="min-w-0">
+                  <div class="text-[11px] font-bold uppercase tracking-wider text-slate-400">Thời gian diễn ra sự kiện</div>
                   <div class="font-semibold capitalize text-slate-900">{{ dateLabel }}</div>
                   <div class="text-sm text-slate-500">{{ timeLabel }}</div>
                 </div>
               </div>
-              <div class="flex items-start gap-3.5 p-4">
-                <span class="grid h-10 w-10 shrink-0 place-items-center rounded-xl bg-rose-50 text-rose-600"><MapPin class="h-5 w-5" /></span>
-                <div class="min-w-0 text-sm leading-relaxed text-slate-700">{{ event.location }}</div>
+
+              <!-- Registration deadline & spots -->
+              <div v-if="regDeadlineLabel || spotsInfo" class="grid gap-3 p-4 sm:grid-cols-2 bg-slate-50/50">
+                <div v-if="regDeadlineLabel" class="flex items-start gap-3">
+                  <span class="grid h-9 w-9 shrink-0 place-items-center rounded-xl bg-amber-50 text-amber-600"><Clock class="h-4 w-4" /></span>
+                  <div class="min-w-0 text-xs">
+                    <div class="font-bold text-slate-600">Hạn chót đăng ký:</div>
+                    <div class="font-semibold text-slate-900 mt-0.5">{{ regDeadlineLabel }}</div>
+                  </div>
+                </div>
+                <div v-if="spotsInfo" class="flex items-start gap-3">
+                  <span class="grid h-9 w-9 shrink-0 place-items-center rounded-xl bg-sky-50 text-sky-600"><Users class="h-4 w-4" /></span>
+                  <div class="min-w-0 text-xs">
+                    <div class="font-bold text-slate-600">Hạn mức tham dự:</div>
+                    <div class="font-semibold text-slate-900 mt-0.5">
+                      {{ spotsInfo.current }} / {{ spotsInfo.total }} khách
+                      <span :class="spotsInfo.isFull ? 'text-rose-600 font-bold' : 'text-emerald-600 font-bold'">
+                        ({{ spotsInfo.isFull ? 'Hết chỗ' : `Còn ${spotsInfo.remaining} chỗ` }})
+                      </span>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              <!-- Location & Map -->
+              <div class="flex flex-col gap-2 p-4 sm:flex-row sm:items-center sm:justify-between">
+                <div class="flex items-start gap-3.5 min-w-0">
+                  <span class="grid h-10 w-10 shrink-0 place-items-center rounded-xl bg-rose-50 text-rose-600"><MapPin class="h-5 w-5" /></span>
+                  <div class="min-w-0">
+                    <div class="text-[11px] font-bold uppercase tracking-wider text-slate-400">Địa điểm tổ chức</div>
+                    <div class="text-sm leading-relaxed text-slate-800 font-medium">{{ event.location || 'Địa điểm sẽ được cập nhật sau' }}</div>
+                  </div>
+                </div>
+                <a
+                  v-if="googleMapsUrl"
+                  :href="googleMapsUrl"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  class="inline-flex shrink-0 items-center justify-center gap-1.5 rounded-xl border border-rose-200 bg-rose-50/70 px-3 py-2 text-xs font-semibold text-rose-700 hover:bg-rose-100 transition-colors"
+                >
+                  <Navigation class="h-3.5 w-3.5" /> Chỉ đường Google Maps <ExternalLink class="h-3 w-3 opacity-70" />
+                </a>
               </div>
             </div>
           </section>
@@ -353,16 +492,36 @@ const handleSubmitRegistration = async () => {
             <UserCheck class="h-5 w-5 shrink-0 text-primary-500" />
           </section>
 
-          <!-- Description -->
-          <section v-if="event.description" class="mt-5">
-            <h2 class="eyebrow mb-2">Giới thiệu sự kiện</h2>
-            <p class="whitespace-pre-line text-[15px] leading-relaxed text-slate-700">{{ event.description }}</p>
+          <!-- Description & Info URL -->
+          <section v-if="event.description || infoUrl" class="mt-5 card card-pad space-y-3">
+            <div class="flex items-center justify-between">
+              <h2 class="eyebrow">Giới thiệu sự kiện</h2>
+              <a
+                v-if="infoUrl"
+                :href="infoUrl"
+                target="_blank"
+                rel="noopener noreferrer"
+                class="inline-flex items-center gap-1 text-xs font-semibold text-primary-600 hover:underline"
+              >
+                Xem chi tiết giới thiệu <ExternalLink class="h-3 w-3" />
+              </a>
+            </div>
+            <p v-if="event.description" class="whitespace-pre-line text-[15px] leading-relaxed text-slate-700">{{ event.description }}</p>
           </section>
 
           <!-- RSVP (desktop inline) -->
-          <section v-if="actionChosen === 'none'" class="mt-8 hidden gap-3 sm:flex">
-            <button @click="chooseConfirm" class="btn-primary btn-lg flex-1"><Check class="h-5 w-5" /> Xác nhận tham gia</button>
-            <button @click="actionChosen = 'decline'" class="btn-secondary btn-lg">Không tham gia</button>
+          <section v-if="actionChosen === 'none'" class="mt-8 hidden sm:block">
+            <div v-if="isRegistrationClosed" class="rounded-2xl border border-rose-200 bg-rose-50/80 p-5 text-center">
+              <div class="inline-flex items-center justify-center gap-2 text-rose-700 font-bold mb-1">
+                <AlertTriangle class="h-5 w-5" /> Cổng đăng ký đã đóng
+              </div>
+              <p class="text-sm text-rose-900 font-medium">{{ closureReason }}</p>
+              <p class="mt-2 text-xs text-rose-600">Nếu có thắc mắc, vui lòng liên hệ trực tiếp ban tổ chức hoặc người gửi thư mời.</p>
+            </div>
+            <div v-else class="flex gap-3">
+              <button @click="chooseConfirm" class="btn-primary btn-lg flex-1"><Check class="h-5 w-5" /> Xác nhận tham gia</button>
+              <button @click="actionChosen = 'decline'" class="btn-secondary btn-lg">Không tham gia</button>
+            </div>
           </section>
 
           <!-- DECLINED -->
@@ -600,9 +759,15 @@ const handleSubmitRegistration = async () => {
         v-if="!registrationDone && actionChosen === 'none'"
         class="pb-safe fixed inset-x-0 bottom-0 z-40 border-t border-slate-200 bg-white/95 shadow-nav backdrop-blur-xl sm:hidden"
       >
-        <div class="flex gap-2 p-3">
-          <button @click="actionChosen = 'decline'" class="btn-secondary btn-lg px-4" aria-label="Không tham gia"><X class="h-5 w-5" /></button>
-          <button @click="chooseConfirm" class="btn-primary btn-lg flex-1"><Check class="h-5 w-5" /> Xác nhận tham gia</button>
+        <div class="p-3">
+          <div v-if="isRegistrationClosed" class="flex items-center justify-center gap-2 rounded-xl bg-slate-100 py-3 px-4 text-center text-xs font-bold text-slate-600">
+            <AlertTriangle class="h-4 w-4 text-rose-500 shrink-0" />
+            <span class="truncate">Đã đóng đăng ký ({{ closureReason }})</span>
+          </div>
+          <div v-else class="flex gap-2">
+            <button @click="actionChosen = 'decline'" class="btn-secondary btn-lg px-4" aria-label="Không tham gia"><X class="h-5 w-5" /></button>
+            <button @click="chooseConfirm" class="btn-primary btn-lg flex-1"><Check class="h-5 w-5" /> Xác nhận tham gia</button>
+          </div>
         </div>
       </div>
     </template>

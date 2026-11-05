@@ -283,8 +283,11 @@ const eventForm = ref({
   name: '',
   description: '',
   location: '',
+  map_url: '',
+  info_url: '',
   start_at: '',
   end_at: '',
+  registration_deadline: '',
   capacity: 500 as number | '',
   approval_mode: 'REFERRER_ONLY' as 'REFERRER_ONLY' | 'TWO_TIER' | 'AUTO',
   event_package_id: '' as number | string
@@ -310,8 +313,11 @@ const editEventForm = ref({
   id: 0,
   name: '',
   location: '',
+  map_url: '',
+  info_url: '',
   start_at: '',
   end_at: '',
+  registration_deadline: '',
   capacity: 500,
   description: '',
   approval_mode: 'REFERRER_ONLY'
@@ -329,8 +335,11 @@ const openEditEventModal = (ev: any) => {
     id: ev.id,
     name: ev.name || '',
     location: ev.location || '',
+    map_url: ev.map_url || '',
+    info_url: ev.info_url || '',
     start_at: toInputDate(ev.start_at),
     end_at: toInputDate(ev.end_at),
+    registration_deadline: toInputDate(ev.registration_deadline),
     capacity: ev.capacity || 500,
     description: ev.description || '',
     approval_mode: ev.approval_mode || 'REFERRER_ONLY'
@@ -351,8 +360,11 @@ const saveEditEvent = async () => {
     await api.put(`/tenants/portal/events/${editEventForm.value.id}`, {
       name: editEventForm.value.name,
       location: editEventForm.value.location,
+      map_url: editEventForm.value.map_url || null,
+      info_url: editEventForm.value.info_url || null,
       start_at: toMysqlDate(editEventForm.value.start_at),
       end_at: toMysqlDate(editEventForm.value.end_at),
+      registration_deadline: toMysqlDate(editEventForm.value.registration_deadline) || null,
       capacity: Number(editEventForm.value.capacity),
       description: editEventForm.value.description,
       approval_mode: editEventForm.value.approval_mode
@@ -722,8 +734,11 @@ const createEvent = async () => {
       name: eventForm.value.name,
       description: eventForm.value.description,
       location: eventForm.value.location,
+      map_url: eventForm.value.map_url || null,
+      info_url: eventForm.value.info_url || null,
       start_at: toMysqlDate(eventForm.value.start_at),
       end_at: toMysqlDate(eventForm.value.end_at),
+      registration_deadline: toMysqlDate(eventForm.value.registration_deadline) || null,
       capacity: Number(eventForm.value.capacity) || selectedPackageMaxAttendees.value,
       approval_mode: eventForm.value.approval_mode,
       event_package_id: eventPackageId,
@@ -736,8 +751,11 @@ const createEvent = async () => {
       name: '',
       description: '',
       location: '',
+      map_url: '',
+      info_url: '',
       start_at: '',
       end_at: '',
+      registration_deadline: '',
       capacity: 500,
       approval_mode: 'REFERRER_ONLY',
       event_package_id: ''
@@ -4541,21 +4559,46 @@ onBeforeUnmount(stopScanner);
               </div>
             </div>
 
+            <div>
+              <label class="modern-label flex items-center justify-between">
+                <span>Link Google Maps / Định vị chỉ đường</span>
+                <span class="text-[11px] text-slate-400 font-normal">Tùy chọn</span>
+              </label>
+              <div class="modern-input-wrap">
+                <Link2 :size="16" class="input-icon-left text-slate-400" />
+                <input v-model="eventForm.map_url" class="modern-input" placeholder="Dán link Google Maps hoặc vị trí để khách bấm xem chỉ đường" />
+              </div>
+            </div>
+
             <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <div>
-                <label class="modern-label">Thời gian bắt đầu <span class="required">*</span></label>
+                <label class="modern-label">Thời gian bắt đầu sự kiện <span class="required">*</span></label>
                 <div class="modern-input-wrap">
                   <Clock3 :size="16" class="input-icon-left" />
                   <input v-model="eventForm.start_at" type="datetime-local" required class="modern-input" />
                 </div>
               </div>
               <div>
-                <label class="modern-label">Thời gian kết thúc <span class="required">*</span></label>
+                <label class="modern-label">Thời gian kết thúc sự kiện <span class="required">*</span></label>
                 <div class="modern-input-wrap">
                   <Clock3 :size="16" class="input-icon-left" />
                   <input v-model="eventForm.end_at" type="datetime-local" required class="modern-input" />
                 </div>
               </div>
+            </div>
+
+            <div>
+              <div class="flex items-center justify-between mb-1">
+                <label class="modern-label mb-0">Hạn chót tiếp nhận đăng ký</label>
+                <span class="text-[11px] text-slate-400 font-normal">Tự động đóng cổng khi hết hạn</span>
+              </div>
+              <div class="modern-input-wrap">
+                <Clock :size="16" class="input-icon-left text-slate-400" />
+                <input v-model="eventForm.registration_deadline" type="datetime-local" class="modern-input" />
+              </div>
+              <p class="text-[11px] text-slate-500 mt-1">
+                Thời điểm hệ thống tự động khóa nhận đăng ký mới (mặc định nếu để trống sẽ tự động khóa khi sự kiện bắt đầu).
+              </p>
             </div>
 
             <div>
@@ -4585,6 +4628,17 @@ onBeforeUnmount(stopScanner);
             <div>
               <label class="modern-label">Mô tả sự kiện (không bắt buộc)</label>
               <textarea v-model="eventForm.description" class="modern-textarea" rows="2" placeholder="Ghi chú thêm về nội dung, trang phục hoặc lịch trình..."></textarea>
+            </div>
+
+            <div>
+              <label class="modern-label flex items-center justify-between">
+                <span>Link bài viết / Giới thiệu sự kiện</span>
+                <span class="text-[11px] text-slate-400 font-normal">Tùy chọn</span>
+              </label>
+              <div class="modern-input-wrap">
+                <Link2 :size="16" class="input-icon-left text-slate-400" />
+                <input v-model="eventForm.info_url" class="modern-input" placeholder="Ví dụ: Link bài viết fanpage, website, tài liệu giới thiệu chương trình..." />
+              </div>
             </div>
 
             <div>
@@ -4758,15 +4812,31 @@ onBeforeUnmount(stopScanner);
           <input v-model="editEventForm.location" required class="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-900" />
         </div>
 
+        <div>
+          <label class="block text-xs font-bold text-slate-700 mb-1">Link Google Maps / Định vị chỉ đường (tùy chọn)</label>
+          <input v-model="editEventForm.map_url" placeholder="Dán link Google Maps hoặc vị trí chỉ đường" class="w-full p-2 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-900" />
+        </div>
+
         <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
           <div>
-            <label class="block text-xs font-bold text-slate-700 mb-1">Bắt đầu <span class="text-rose-500">*</span></label>
+            <label class="block text-xs font-bold text-slate-700 mb-1">Thời gian bắt đầu sự kiện <span class="text-rose-500">*</span></label>
             <input v-model="editEventForm.start_at" type="datetime-local" required class="w-full p-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-900" />
           </div>
           <div>
-            <label class="block text-xs font-bold text-slate-700 mb-1">Kết thúc <span class="text-rose-500">*</span></label>
+            <label class="block text-xs font-bold text-slate-700 mb-1">Thời gian kết thúc sự kiện <span class="text-rose-500">*</span></label>
             <input v-model="editEventForm.end_at" type="datetime-local" required class="w-full p-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-900" />
           </div>
+        </div>
+
+        <div>
+          <div class="flex items-center justify-between mb-1">
+            <label class="block text-xs font-bold text-slate-700 mb-0">Hạn chót tiếp nhận đăng ký</label>
+            <span class="text-[10px] text-slate-400">Tự động khóa cổng khi hết hạn</span>
+          </div>
+          <input v-model="editEventForm.registration_deadline" type="datetime-local" class="w-full p-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-900" />
+          <p class="text-[10px] text-slate-500 mt-1">
+            Hệ thống sẽ tự động đóng nhận đăng ký sau thời điểm này (nếu để trống sẽ tự đóng khi sự kiện bắt đầu).
+          </p>
         </div>
 
         <!-- SỨC CHỨA TỐI ĐA -->
@@ -4797,6 +4867,11 @@ onBeforeUnmount(stopScanner);
         <div>
           <label class="block text-xs font-bold text-slate-700 mb-1">Mô tả sự kiện</label>
           <textarea v-model="editEventForm.description" rows="2" class="w-full p-2 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-700"></textarea>
+        </div>
+
+        <div>
+          <label class="block text-xs font-bold text-slate-700 mb-1">Link bài viết / Giới thiệu sự kiện (tùy chọn)</label>
+          <input v-model="editEventForm.info_url" placeholder="Ví dụ: Link bài viết fanpage, website, tài liệu..." class="w-full p-2 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-900" />
         </div>
 
         <div class="flex justify-end gap-2 pt-3 border-t border-slate-100">
