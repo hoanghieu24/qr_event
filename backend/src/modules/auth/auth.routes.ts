@@ -13,6 +13,9 @@ router.post('/register', AuthController.register);
 router.post('/send-otp', otpLimiter, AuthController.sendOtp);
 router.post('/verify-otp', AuthController.verifyOtp);
 
+// Internal SMTP relay nonce verification (for cloud platforms blocking direct SMTP ports)
+router.post('/verify-smtp-relay', AuthController.verifySmtpRelay);
+
 // Get current profile
 router.get('/me', authenticate, AuthController.getMe);
 

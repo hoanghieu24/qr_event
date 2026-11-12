@@ -2,7 +2,7 @@ import { Router, Request, Response } from 'express';
 import { authenticate } from '../../middlewares/auth.middleware';
 import { requireAdmin, requireEventCapability, requirePermission } from '../../middlewares/rbac.middleware';
 import { query } from '../../config/database';
-import nodemailer from 'nodemailer';
+import { getEffectiveSmtpConfig, resolveSmtpRelayUrl, sendEmailWithCustomConfig } from '../../config/mailer';
 
 const router = Router();
 
@@ -185,34 +185,59 @@ router.put('/settings', authenticate, requireAdmin, async (req: Request, res: Re
 // 5. Test SMTP Email configuration
 router.post('/settings/test-email', authenticate, requireAdmin, async (req: Request, res: Response) => {
   try {
-    const { target_email, smtp_host, smtp_port, smtp_user, smtp_pass, smtp_sender_name } = req.body;
-    const recipient = target_email || req.user?.email || 'admin@eventqr.com';
+    const { target_email, smtp_host, smtp_port, smtp_user, smtp_pass, smtp_sender_name, smtp_from_name } = req.body;
+    const savedConfig = await getEffectiveSmtpConfig();
 
-    const testTransporter = nodemailer.createTransport({
-      host: smtp_host || 'smtp.gmail.com',
-      port: Number(smtp_port) || 587,
-      secure: Number(smtp_port) === 465,
-      auth: {
-        user: smtp_user,
-        pass: smtp_pass,
+    const host = (smtp_host || savedConfig.host || 'smtp.gmail.com').trim();
+    const port = Number(smtp_port) || savedConfig.port || 587;
+    const user = (smtp_user || savedConfig.user || '').trim();
+    const pass = (smtp_pass || savedConfig.pass || '').trim();
+    const fromName = (smtp_from_name || smtp_sender_name || savedConfig.fromName || 'KTSQR Event System').trim();
+    const recipient = (target_email || req.user?.email || user || 'admin@eventqr.com').trim();
+
+    if (!user || !pass) {
+      res.status(400).json({ success: false, message: 'Vui lòng nhập đầy đủ Tài khoản SMTP Email và Mật khẩu ứng dụng.' });
+      return;
+    }
+
+    const result = await sendEmailWithCustomConfig(
+      {
+        host,
+        port,
+        secure: port === 465,
+        user,
+        pass,
+        fromName,
+        fromEmail: user,
+        relayUrl: savedConfig.relayUrl || resolveSmtpRelayUrl(),
       },
-    });
+      {
+        to: recipient,
+        subject: '🧪 [KTSQR] Thử nghiệm cấu hình SMTP Email thành công!',
+        html: `
+          <div style="font-family: sans-serif; padding: 20px; color: #1e293b;">
+            <h2 style="color: #4f46e5;">Cấu hình SMTP của bạn hoạt động hoàn hảo!</h2>
+            <p>Email này được gửi thử nghiệm từ trang quản trị hệ thống <strong>KTSQR Event Check-in</strong>.</p>
+            <hr style="border: 0; border-top: 1px solid #e2e8f0; margin: 15px 0;">
+            <p style="font-size: 12px; color: #64748b;">Thời gian kiểm tra: ${new Date().toLocaleString('vi-VN', { timeZone: 'Asia/Ho_Chi_Minh' })}</p>
+          </div>
+        `,
+      }
+    );
 
-    const info = await testTransporter.sendMail({
-      from: `"${smtp_sender_name || 'KTSQR Event System'}" <${smtp_user}>`,
-      to: recipient,
-      subject: '🧪 [KTSQR] Thử nghiệm cấu hình SMTP Email thành công!',
-      html: `
-        <div style="font-family: sans-serif; padding: 20px; color: #1e293b;">
-          <h2 style="color: #4f46e5;">Cấu hình SMTP của bạn hoạt động hoàn hảo!</h2>
-          <p>Email này được gửi thử nghiệm từ trang quản trị hệ thống <strong>KTSQR Event Check-in</strong>.</p>
-          <hr style="border: 0; border-top: 1px solid #e2e8f0; margin: 15px 0;">
-          <p style="font-size: 12px; color: #64748b;">Thời gian kiểm tra: ${new Date().toLocaleString('vi-VN')}</p>
-        </div>
-      `,
-    });
+    if (!result.sent || result.simulated) {
+      res.status(400).json({
+        success: false,
+        message: `Lỗi kết nối SMTP: ${result.error || 'Không thể gửi email.'}`,
+      });
+      return;
+    }
 
-    res.json({ success: true, message: `Email thử nghiệm đã được gửi tới ${recipient} (Message ID: ${info.messageId})` });
+    const modeNote = result.viaRelay ? ' [via HTTPS Relay]' : '';
+    res.json({
+      success: true,
+      message: `Email thử nghiệm đã được gửi tới ${recipient}${modeNote} (Message ID: ${result.messageId || 'OK'})`,
+    });
   } catch (error: any) {
     res.status(400).json({ success: false, message: `Lỗi kết nối SMTP: ${error.message}` });
   }

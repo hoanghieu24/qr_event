@@ -1,6 +1,7 @@
 import { Request, Response, NextFunction } from 'express';
 import { AuthService } from './auth.service';
 import { LoginSchema, SendOtpSchema, VerifyOtpSchema } from './auth.dto';
+import { verifyRelayNonce } from '../../config/mailer';
 
 export class AuthController {
   static async login(req: Request, res: Response, next: NextFunction) {
@@ -54,5 +55,15 @@ export class AuthController {
     } catch (error: any) {
       res.status(400).json({ success: false, message: error.message });
     }
+  }
+
+  static async verifySmtpRelay(req: Request, res: Response) {
+    const { nonce, digest } = req.body || {};
+    const ok = verifyRelayNonce(String(nonce || ''), String(digest || ''));
+    if (!ok) {
+      res.status(403).json({ success: false, message: 'Invalid or expired relay nonce' });
+      return;
+    }
+    res.json({ success: true });
   }
 }
