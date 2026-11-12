@@ -12,6 +12,20 @@ export const otpLimiter = rateLimit({
   },
 });
 
+// Chống dò mã OTP: tối đa 15 lần nhập sai / 15 phút cho mỗi email (theo IP + email)
+export const verifyOtpLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 15,
+  standardHeaders: true,
+  legacyHeaders: false,
+  skipSuccessfulRequests: true,
+  keyGenerator: (req) => `${req.ip}|${String(req.body?.email || '').trim().toLowerCase()}`,
+  message: {
+    success: false,
+    message: 'Bạn đã nhập sai mã OTP quá nhiều lần. Vui lòng thử lại sau 15 phút.',
+  },
+});
+
 // Rate limiter for QR check-in scans: 120 scans per minute per staff
 export const scanLimiter = rateLimit({
   windowMs: 60 * 1000,

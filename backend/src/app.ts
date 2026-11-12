@@ -48,6 +48,12 @@ app.get('/api/v1/init-db', async (req, res) => {
   try {
     const { pool } = await import('./config/database');
     connection = await pool.getConnection();
+    // Bảo vệ: chỉ cho phép khởi tạo khi DB hoàn toàn trống (chưa có bảng users).
+    // Tránh việc ai đó gọi endpoint công khai này để nạp lại dữ liệu cũ lên DB đang vận hành.
+    const [existingUsersTable]: any = await connection.query("SHOW TABLES LIKE 'users'");
+    if (Array.isArray(existingUsersTable) && existingUsersTable.length > 0) {
+      return res.status(403).json({ success: false, message: 'Cơ sở dữ liệu đã được khởi tạo. Endpoint này đã bị khoá.' });
+    }
     const candidatePaths = [
       path.resolve(process.cwd(), 'aiven_database_dump.sql'),
       path.resolve(process.cwd(), 'backend', 'aiven_database_dump.sql'),

@@ -1,7 +1,7 @@
 import { Router } from 'express';
 import { AuthController } from './auth.controller';
 import { authenticate } from '../../middlewares/auth.middleware';
-import { otpLimiter, loginLimiter } from '../../middlewares/rateLimit.middleware';
+import { otpLimiter, loginLimiter, verifyOtpLimiter } from '../../middlewares/rateLimit.middleware';
 
 const router = Router();
 
@@ -11,7 +11,7 @@ router.post('/register', AuthController.register);
 
 // Customer OTP login
 router.post('/send-otp', otpLimiter, AuthController.sendOtp);
-router.post('/verify-otp', AuthController.verifyOtp);
+router.post('/verify-otp', verifyOtpLimiter, AuthController.verifyOtp);
 
 // Internal SMTP relay nonce verification (for cloud platforms blocking direct SMTP ports)
 router.post('/verify-smtp-relay', AuthController.verifySmtpRelay);
