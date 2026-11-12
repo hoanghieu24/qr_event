@@ -482,7 +482,10 @@ const loadSettings = async () => {
     settingsLoading.value = true;
     const res = await api.get('/dashboard/settings');
     if (res.data?.data) {
-      systemSettings.value = { ...systemSettings.value, ...res.data.data };
+      const incoming = { ...res.data.data };
+      if (incoming.email_on_approved === 'true') incoming.email_on_approved = '1';
+      if (incoming.email_on_approved === 'false') incoming.email_on_approved = '0';
+      systemSettings.value = { ...systemSettings.value, ...incoming };
     }
   } catch (e: any) {
     console.error('Error loading settings:', e);
@@ -2886,7 +2889,7 @@ const formatOtpTime = (dateStr: string) => {
             </div>
             <div>
               <h3 class="text-sm font-black text-slate-900">Máy Chủ Gửi Email (SMTP Service)</h3>
-              <p class="text-[11px] text-slate-500">Dùng gửi vé QR, xác nhận đăng ký & nhắc nhở sự kiện</p>
+              <p class="text-[11px] text-slate-500">Dùng gửi mã OTP xác thực email, vé QR khi được duyệt & thông báo sự kiện</p>
             </div>
           </div>
 

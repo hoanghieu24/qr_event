@@ -1,6 +1,6 @@
 import { Router, Request, Response } from 'express';
 import { authenticate } from '../../middlewares/auth.middleware';
-import { requireEventCapability, requirePermission } from '../../middlewares/rbac.middleware';
+import { requireAdmin, requireEventCapability, requirePermission } from '../../middlewares/rbac.middleware';
 import { query } from '../../config/database';
 import nodemailer from 'nodemailer';
 
@@ -148,7 +148,7 @@ router.get('/leaderboard', authenticate, requirePermission('reports:view'), requ
 });
 
 // 4. System Settings (Email SMTP, Notification Rules, etc.)
-router.get('/settings', authenticate, requirePermission('users:manage'), async (req: Request, res: Response) => {
+router.get('/settings', authenticate, requireAdmin, async (req: Request, res: Response) => {
   try {
     const rows: any = await query('SELECT `key`, `value` FROM system_settings');
     const settings: Record<string, string> = {};
@@ -161,7 +161,7 @@ router.get('/settings', authenticate, requirePermission('users:manage'), async (
   }
 });
 
-router.put('/settings', authenticate, requirePermission('users:manage'), async (req: Request, res: Response) => {
+router.put('/settings', authenticate, requireAdmin, async (req: Request, res: Response) => {
   try {
     const settingsObj = req.body;
     if (!settingsObj || typeof settingsObj !== 'object') {
@@ -183,7 +183,7 @@ router.put('/settings', authenticate, requirePermission('users:manage'), async (
 });
 
 // 5. Test SMTP Email configuration
-router.post('/settings/test-email', authenticate, requirePermission('users:manage'), async (req: Request, res: Response) => {
+router.post('/settings/test-email', authenticate, requireAdmin, async (req: Request, res: Response) => {
   try {
     const { target_email, smtp_host, smtp_port, smtp_user, smtp_pass, smtp_sender_name } = req.body;
     const recipient = target_email || req.user?.email || 'admin@eventqr.com';

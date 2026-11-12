@@ -45,6 +45,8 @@ const otpEmail = ref('');
 const otpCode = ref('');
 const otpSent = ref(false);
 const otpBusy = ref(false);
+const otpMessage = ref('');
+const otpIsSimulation = ref(false);
 
 const passwordEmail = ref('');
 const passwordValue = ref('');
@@ -202,18 +204,23 @@ const chooseConfirm = () => {
 
 const handleSendOtp = async () => {
   formError.value = '';
+  otpMessage.value = '';
   otpBusy.value = true;
   try {
     const res = await auth.sendOtp(otpEmail.value.trim());
-    if (res.data?.data?.token) {
+    const data = res.data?.data || {};
+    if (data.token) {
       // Đã từng có tài khoản -> Bỏ qua OTP, tự động đăng nhập và cập nhật form
-      const user = res.data.data.user;
+      const user = data.user;
       form.value.full_name = user.name || form.value.full_name;
       form.value.email = user.email || otpEmail.value.trim();
       form.value.phone = user.phone || form.value.phone;
       return;
     }
     otpSent.value = true;
+    otpIsSimulation.value = Boolean(data.is_simulation);
+    otpCode.value = otpIsSimulation.value ? (data.demo_otp || '123456') : '';
+    otpMessage.value = data.message || `Đã gửi mã OTP tới ${otpEmail.value.trim()}`;
     form.value.email = otpEmail.value.trim();
   } catch (err: any) {
     const msg = err.response?.data?.message || err.message;
@@ -582,7 +589,7 @@ const handleSubmitRegistration = async () => {
                 <template v-if="authMode === 'otp'">
                   <div>
                     <h3 class="font-bold text-slate-900">Xác thực email của bạn</h3>
-                    <p class="text-sm text-slate-500">Khách đã từng có tài khoản sẽ tự động chuyển bước nhận vé ngay mà không cần nhập OTP.</p>
+                    <p class="text-sm text-slate-500">Nhập email để nhận mã OTP 6 chữ số xác thực danh tính trước khi nhận vé QR.</p>
                   </div>
                   
                   <form v-if="!otpSent" @submit.prevent="handleSendOtp" class="space-y-3">
@@ -619,7 +626,10 @@ const handleSubmitRegistration = async () => {
                   </form>
 
                   <form v-else @submit.prevent="handleVerifyOtp" class="space-y-2">
-                    <div class="alert-success">Đã gửi mã tới <b>{{ otpEmail }}</b></div>
+                    <div class="alert-success text-xs">
+                      <span v-if="otpMessage">{{ otpMessage }}</span>
+                      <span v-else>Đã gửi mã tới <b>{{ otpEmail }}</b></span>
+                    </div>
                     <div class="flex gap-2">
                       <input
                         v-model="otpCode"
@@ -633,10 +643,15 @@ const handleSubmitRegistration = async () => {
                         <Loader2 v-if="otpBusy" class="h-4 w-4 animate-spin" /> Xác nhận
                       </button>
                     </div>
-                    <div class="flex items-center justify-between pt-1">
-                      <button type="button" @click="otpSent = false; otpCode = ''" class="text-xs font-semibold text-slate-500 hover:text-slate-800">
-                        Đổi email khác
-                      </button>
+                    <div class="flex flex-wrap items-center justify-between gap-2 pt-1">
+                      <div class="flex items-center gap-3">
+                        <button type="button" @click="otpSent = false; otpCode = ''; otpMessage = ''" class="text-xs font-semibold text-slate-500 hover:text-slate-800">
+                          Đổi email khác
+                        </button>
+                        <button type="button" :disabled="otpBusy" @click="handleSendOtp" class="text-xs font-bold text-primary-600 hover:underline disabled:opacity-50">
+                          Gửi lại mã
+                        </button>
+                      </div>
                       <button type="button" @click="switchToPassword" class="text-xs font-bold text-primary-600 hover:underline flex items-center gap-1">
                         <LogIn class="h-3.5 w-3.5" /> Đã có tài khoản, đăng nhập
                       </button>

@@ -4,11 +4,186 @@ import { v4 as uuidv4 } from 'uuid';
 import QRCode from 'qrcode';
 import { query, withTransaction } from '../../config/database';
 import { ENV } from '../../config/env';
-import { sendEmail } from '../../config/mailer';
+import { sendEmail, sendEmailWithResult, shouldSendApprovedEmail } from '../../config/mailer';
 import { InvitesService } from '../invites/invites.service';
 import { Realtime } from '../../realtime/socket';
 
 export class RegistrationsService {
+  private static escapeHtml(value: string): string {
+    return String(value || '')
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;')
+      .replace(/'/g, '&#39;');
+  }
+
+  private static formatEventDateTime(dateInput: any): string {
+    if (!dateInput) return 'Đang cập nhật';
+    const d = new Date(dateInput);
+    if (isNaN(d.getTime())) return 'Đang cập nhật';
+    return d.toLocaleString('vi-VN', {
+      timeZone: 'Asia/Ho_Chi_Minh',
+      hour: '2-digit',
+      minute: '2-digit',
+      day: '2-digit',
+      month: '2-digit',
+      year: 'numeric',
+    });
+  }
+
+  private static async sendApprovedTicketEmail(params: {
+    to: string;
+    fullName: string;
+    eventName: string;
+    eventLocation: string;
+    eventMapUrl?: string | null;
+    eventStartAt: any;
+    ticketCode: string;
+    referrerName?: string | null;
+    isAutoApproved?: boolean;
+  }): Promise<{ sent: boolean; simulated: boolean; error?: string }> {
+    try {
+      const enabled = await shouldSendApprovedEmail();
+      if (!enabled) {
+        return { sent: false, simulated: false };
+      }
+
+      const qrPngBuffer = await QRCode.toBuffer(params.ticketCode, {
+        type: 'png',
+        errorCorrectionLevel: 'H',
+        margin: 2,
+        width: 360,
+        color: { dark: '#0f172a', light: '#ffffff' },
+      });
+
+      const baseFrontendUrl = (ENV.FRONTEND_URL || 'http://localhost:5173').replace(/\/$/, '');
+      const ticketUrl = `${baseFrontendUrl}/my-ticket`;
+      const mapHref = params.eventMapUrl
+        ? params.eventMapUrl
+        : params.eventLocation
+          ? `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(params.eventLocation)}`
+          : '';
+
+      const safeName = this.escapeHtml(params.fullName);
+      const safeEventName = this.escapeHtml(params.eventName);
+      const safeLocation = this.escapeHtml(params.eventLocation || 'Sẽ cập nhật sau');
+      const safeTicketCode = this.escapeHtml(params.ticketCode);
+      const safeReferrer = params.referrerName ? this.escapeHtml(params.referrerName) : '';
+      const timeLabel = this.formatEventDateTime(params.eventStartAt);
+
+      const introText = params.isAutoApproved
+        ? `Bạn đã đăng ký thành công sự kiện <strong>${safeEventName}</strong>. Vé QR của bạn đã được kích hoạt tự động!`
+        : `Yêu cầu tham dự sự kiện <strong>${safeEventName}</strong> của bạn đã được phê duyệt chính thức!`;
+
+      const html = `
+        <div style="font-family: 'Segoe UI', Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 26px; border: 1px solid #cbd5e1; border-radius: 16px; background-color: #ffffff; color: #0f172a;">
+          <div style="text-align: center; margin-bottom: 16px;">
+            <span style="display: inline-block; background-color: #ecfdf5; color: #047857; font-weight: 700; font-size: 12px; padding: 6px 14px; border-radius: 999px; letter-spacing: 0.5px;">
+              VÉ THAM DỰ SỰ KIỆN KTSQR HỢP LỆ
+            </span>
+          </div>
+          <h2 style="color: #0284c7; text-align: center; margin: 0 0 14px 0; font-size: 22px;">${safeEventName}</h2>
+          <p style="font-size: 14px; line-height: 1.6;">Kính gửi <strong>${safeName}</strong>,</p>
+          <p style="font-size: 14px; line-height: 1.6;">${introText}</p>
+
+          <div style="text-align: center; margin: 22px 0; padding: 20px; background-color: #f8fafc; border: 1px dashed #94a3b8; border-radius: 12px;">
+            <div style="font-size: 12px; font-weight: 700; color: #475569; text-transform: uppercase; letter-spacing: 1px; margin-bottom: 12px;">
+              MÃ QR CHECK-IN TẠI CỔNG
+            </div>
+            <img src="cid:ktsqr-ticket-qr" alt="QR Vé Tham Dự" width="220" height="220" style="display: block; margin: 0 auto; background: #ffffff; padding: 10px; border-radius: 12px; border: 1px solid #e2e8f0;" />
+            <div style="margin-top: 12px; font-family: monospace; font-size: 16px; font-weight: 800; color: #b91c1c; letter-spacing: 1px;">
+              ${safeTicketCode}
+            </div>
+          </div>
+
+          <div style="background-color: #f8fafc; padding: 16px; border-radius: 10px; margin: 18px 0; font-size: 14px; line-height: 1.7;">
+            <div><strong>Sự kiện:</strong> ${safeEventName}</div>
+            <div><strong>Thời gian:</strong> ${timeLabel}</div>
+            <div><strong>Địa điểm:</strong> ${safeLocation}${mapHref ? ` (<a href="${this.escapeHtml(mapHref)}" style="color: #0284c7; font-weight: 600;">Xem Google Maps</a>)` : ''}</div>
+            ${safeReferrer ? `<div><strong>Người giới thiệu:</strong> ${safeReferrer}</div>` : ''}
+          </div>
+
+          <p style="text-align: center; margin: 22px 0;">
+            <a href="${this.escapeHtml(ticketUrl)}" style="background-color: #0284c7; color: #ffffff; padding: 12px 26px; text-decoration: none; border-radius: 8px; font-weight: 700; display: inline-block; font-size: 14px;">
+              MỞ THẺ VÉ QR TRỰC TUYẾN
+            </a>
+          </p>
+
+          <p style="font-size: 12px; color: #64748b; line-height: 1.6; border-top: 1px solid #e2e8f0; padding-top: 14px; margin-top: 20px;">
+            • Vui lòng xuất trình mã QR ở trên (trực tiếp từ email này hoặc từ trang Vé của tôi) tại quầy check-in.<br/>
+            • Mỗi mã QR chỉ có giá trị check-in <strong>ĐÚNG 1 LẦN</strong>. Vui lòng bảo mật, không chia sẻ ảnh mã QR cho người khác.
+          </p>
+        </div>
+      `;
+
+      return await sendEmailWithResult({
+        to: params.to,
+        subject: `[KTSQR] Vé QR tham dự sự kiện: ${params.eventName}`,
+        html,
+        attachments: [
+          {
+            filename: `ticket-${params.ticketCode}.png`,
+            content: qrPngBuffer,
+            cid: 'ktsqr-ticket-qr',
+            contentType: 'image/png',
+          },
+        ],
+      });
+    } catch (err: any) {
+      console.error('[Mail] Failed to send approved ticket email:', err);
+      return { sent: false, simulated: false, error: err?.message };
+    }
+  }
+
+  private static async emitApprovedTicketRealtime(params: {
+    registrationId: number;
+    eventId: number;
+    eventName: string;
+    customerId: number;
+    referrerId: number;
+    ticketId: number;
+    ticketCode: string;
+    eventLocation: string;
+    eventStartAt: any;
+    fullName: string;
+    phone: string;
+    referrerName?: string;
+  }) {
+    try {
+      const qrDataUrl = await QRCode.toDataURL(params.ticketCode, {
+        errorCorrectionLevel: 'H',
+        margin: 2,
+        width: 360,
+        color: { dark: '#0f172a', light: '#ffffff' },
+      });
+
+      Realtime.emitRegistrationApproved({
+        registrationId: params.registrationId,
+        eventId: params.eventId,
+        eventName: params.eventName,
+        customerId: params.customerId,
+        referrerId: params.referrerId,
+        status: 'APPROVED',
+        ticket: {
+          id: params.ticketId,
+          code: params.ticketCode,
+          status: 'ISSUED',
+          qr_image: qrDataUrl,
+          event_id: params.eventId,
+          event_name: params.eventName,
+          event_location: params.eventLocation,
+          event_start_at: params.eventStartAt,
+          full_name: params.fullName,
+          phone: params.phone,
+          referrer_name: params.referrerName,
+        },
+      });
+    } catch (rtErr) {
+      console.warn('[Realtime] Failed to emit approval:', rtErr);
+    }
+  }
+
   // Generate secure QR ticket code with HMAC integrity
   private static generateTicketCode(eventId: number, regId: number): string {
     const rawUuid = uuidv4().replace(/-/g, '');
@@ -64,10 +239,10 @@ export class RegistrationsService {
       throw new Error('Số điện thoại này đã được đăng ký vé cho sự kiện này.');
     }
 
-    return await withTransaction(async (conn) => {
+    const txResult = await withTransaction(async (conn) => {
       // 4. Fetch event details including approval_mode, dates, and registration deadline
       const [evRows]: any = await conn.query(
-        'SELECT approval_mode, name, location, start_at, end_at, registration_deadline, capacity, status FROM events WHERE id = ? FOR UPDATE',
+        'SELECT approval_mode, name, location, map_url, start_at, end_at, registration_deadline, capacity, status FROM events WHERE id = ? FOR UPDATE',
         [invite.event_id]
       );
       const eventDetails = evRows[0] || {};
@@ -106,6 +281,12 @@ export class RegistrationsService {
         throw new Error('Link mời này đã đạt đủ số lượng khách đăng ký tối đa và đã tự động đóng.');
       }
 
+      const customerToken = jwt.sign(
+        { id: actualCustomerId, email: data.email, type: 'CUSTOMER' },
+        ENV.JWT_SECRET,
+        { expiresIn: '7d' }
+      );
+
       // Handle AUTO approval mode
       if (approvalMode === 'AUTO') {
         const [res]: any = await conn.query(
@@ -133,102 +314,31 @@ export class RegistrationsService {
           [regId, invite.event_id, ticketCode]
         );
 
-        // Send Ticket Email directly to Customer
-        const ticketUrl = `${ENV.FRONTEND_URL}/my-ticket`;
-        const html = `
-          <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 25px; border: 2px solid #0284c7; border-radius: 10px;">
-            <h2 style="color: #0284c7; text-align: center;">VÉ THAM DỰ SỰ KIỆN KTSQR HỢP LỆ</h2>
-            <p>Kính gửi <strong>${data.full_name}</strong>,</p>
-            <p>Bạn đã đăng ký thành công sự kiện <strong>${invite.event_name}</strong>. Vé QR của bạn đã được kích hoạt tự động!</p>
-            <div style="background-color: #f8fafc; padding: 15px; border-radius: 8px; margin: 20px 0;">
-              <p><strong>Sự kiện:</strong> ${invite.event_name}</p>
-              <p><strong>Địa điểm:</strong> ${eventDetails.location || invite.event_location}</p>
-              <p><strong>Thời gian:</strong> ${new Date(eventDetails.start_at || invite.event_start_at).toLocaleString('vi-VN')}</p>
-              <p><strong>Mã số vé:</strong> <span style="font-family: monospace; font-size: 18px; font-weight: bold; color: #b91c1c;">${ticketCode}</span></p>
-            </div>
-            <p style="text-align: center;">
-              <a href="${ticketUrl}" style="background-color: #0284c7; color: white; padding: 12px 24px; text-decoration: none; border-radius: 6px; font-weight: bold; display: inline-block;">
-                XEM MÃ QR VÉ CỦA BẠN
-              </a>
-            </p>
-          </div>
-        `;
-
-        await sendEmail({
-          to: data.email,
-          subject: `[KTSQR] Vé tham dự sự kiện của bạn: ${invite.event_name}`,
-          html,
-        });
-
-        // Generate QR code for AUTO approval mode & emit realtime
-        try {
-          const qrDataUrl = await QRCode.toDataURL(ticketCode, {
-            errorCorrectionLevel: 'H',
-            margin: 2,
-            width: 360,
-            color: { dark: '#0f172a', light: '#ffffff' },
-          });
-
-          Realtime.emitRegistrationNew({
-            registrationId: regId,
-            eventId: invite.event_id,
-            eventName: invite.event_name,
-            customerId: actualCustomerId,
-            fullName: data.full_name,
-            phone: data.phone,
-            email: data.email,
-            referrerId: invite.referrer_id,
-            referrerName: invite.referrer_name,
-            status: 'APPROVED',
-            createdAt: new Date().toISOString(),
-          });
-
-          Realtime.emitRegistrationApproved({
-            registrationId: regId,
-            eventId: invite.event_id,
-            eventName: invite.event_name,
-            customerId: actualCustomerId,
-            referrerId: invite.referrer_id,
-            status: 'APPROVED',
-            ticket: {
-              id: tktRes.insertId,
-              code: ticketCode,
-              status: 'ISSUED',
-              qr_image: qrDataUrl,
-              event_id: invite.event_id,
-              event_name: invite.event_name,
-              event_location: eventDetails.location || invite.event_location,
-              event_start_at: eventDetails.start_at || invite.event_start_at,
-              full_name: data.full_name,
-              phone: data.phone,
-              referrer_name: invite.referrer_name,
-            },
-          });
-        } catch (rtErr) {
-          console.warn('[Realtime] Failed to emit auto approval:', rtErr);
-        }
-
-        const customerToken = jwt.sign(
-          { id: actualCustomerId, email: data.email, type: 'CUSTOMER' },
-          ENV.JWT_SECRET,
-          { expiresIn: '7d' }
-        );
-
         return {
-          id: regId,
-          status: 'APPROVED',
-          ticket_id: tktRes.insertId,
-          code: ticketCode,
-          token: customerToken,
-          user: {
-            id: actualCustomerId,
-            name: data.full_name,
-            email: data.email,
-            phone: data.phone,
-            type: 'CUSTOMER',
-            permissions: [],
+          mode: 'AUTO' as const,
+          regId,
+          ticketId: tktRes.insertId,
+          ticketCode,
+          eventLocation: eventDetails.location || invite.event_location,
+          eventMapUrl: eventDetails.map_url || null,
+          eventStartAt: eventDetails.start_at || invite.event_start_at,
+          referrerName: invite.referrer_name as string | undefined,
+          payload: {
+            id: regId,
+            status: 'APPROVED',
+            ticket_id: tktRes.insertId,
+            code: ticketCode,
+            token: customerToken,
+            user: {
+              id: actualCustomerId,
+              name: data.full_name,
+              email: data.email,
+              phone: data.phone,
+              type: 'CUSTOMER',
+              permissions: [],
+            },
+            message: 'Đăng ký thành công! Vé QR của bạn đã được cấp tự động.',
           },
-          message: 'Đăng ký thành công! Vé QR của bạn đã được cấp tự động.',
         };
       }
 
@@ -249,30 +359,53 @@ export class RegistrationsService {
         ]
       );
 
-      // Send notification email to Referrer
       const [referrer]: any = await conn.query(
         'SELECT name, email FROM users WHERE id = ?',
         [invite.referrer_id]
       );
-      if (referrer && referrer[0]) {
-        await sendEmail({
-          to: referrer[0].email,
-          subject: `[KTSQR] Có lượt đăng ký mới từ khách hàng ${data.full_name}`,
-          html: `
-            <div style="font-family: Arial, sans-serif; padding: 20px;">
-              <h3>Có lượt đăng ký mới cần duyệt!</h3>
-              <p>Chào <strong>${referrer[0].name}</strong>,</p>
-              <p>Khách hàng <strong>${data.full_name}</strong> (SĐT: ${data.phone}, Email: ${data.email}) vừa đăng ký tham dự sự kiện <strong>${invite.event_name}</strong> qua link của bạn.</p>
-              <p>Vui lòng đăng nhập hệ thống để xem và phê duyệt.</p>
-            </div>
-          `,
-        });
-      }
 
-      // Emit realtime registration new event
+      const msg = approvalMode === 'TWO_TIER'
+        ? 'Đăng ký thành công! Đang chờ người giới thiệu và Ban Quản Trị phê duyệt cấp vé QR.'
+        : 'Đăng ký thành công! Vui lòng chờ người giới thiệu phê duyệt cấp vé QR.';
+
+      return {
+        mode: 'PENDING' as const,
+        regId: res.insertId,
+        referrer: referrer?.[0] || null,
+        payload: {
+          id: res.insertId,
+          status: 'PENDING',
+          token: customerToken,
+          user: {
+            id: actualCustomerId,
+            name: data.full_name,
+            email: data.email,
+            phone: data.phone,
+            type: 'CUSTOMER',
+            permissions: [],
+          },
+          message: msg,
+        },
+      };
+    });
+
+    // Post-commit emails & realtime events (outside DB transaction lock)
+    if (txResult.mode === 'AUTO') {
+      await this.sendApprovedTicketEmail({
+        to: data.email,
+        fullName: data.full_name,
+        eventName: invite.event_name,
+        eventLocation: txResult.eventLocation,
+        eventMapUrl: txResult.eventMapUrl,
+        eventStartAt: txResult.eventStartAt,
+        ticketCode: txResult.ticketCode,
+        referrerName: txResult.referrerName,
+        isAutoApproved: true,
+      });
+
       try {
         Realtime.emitRegistrationNew({
-          registrationId: res.insertId,
+          registrationId: txResult.regId,
           eventId: invite.event_id,
           eventName: invite.event_name,
           customerId: actualCustomerId,
@@ -280,39 +413,66 @@ export class RegistrationsService {
           phone: data.phone,
           email: data.email,
           referrerId: invite.referrer_id,
-          referrerName: referrer[0]?.name,
-          status: 'PENDING',
+          referrerName: txResult.referrerName,
+          status: 'APPROVED',
           createdAt: new Date().toISOString(),
         });
       } catch (rtErr) {
-        console.warn('[Realtime] Failed to emit pending registration:', rtErr);
+        console.warn('[Realtime] Failed to emit new registration:', rtErr);
       }
 
-      const msg = approvalMode === 'TWO_TIER'
-        ? 'Đăng ký thành công! Đang chờ người giới thiệu và Ban Quản Trị phê duyệt cấp vé QR.'
-        : 'Đăng ký thành công! Vui lòng chờ người giới thiệu phê duyệt cấp vé QR.';
+      await this.emitApprovedTicketRealtime({
+        registrationId: txResult.regId,
+        eventId: invite.event_id,
+        eventName: invite.event_name,
+        customerId: actualCustomerId,
+        referrerId: invite.referrer_id,
+        ticketId: txResult.ticketId,
+        ticketCode: txResult.ticketCode,
+        eventLocation: txResult.eventLocation,
+        eventStartAt: txResult.eventStartAt,
+        fullName: data.full_name,
+        phone: data.phone,
+        referrerName: txResult.referrerName,
+      });
 
-      const customerToken = jwt.sign(
-        { id: actualCustomerId, email: data.email, type: 'CUSTOMER' },
-        ENV.JWT_SECRET,
-        { expiresIn: '7d' }
-      );
+      return txResult.payload;
+    }
 
-      return {
-        id: res.insertId,
+    if (txResult.referrer?.email) {
+      await sendEmail({
+        to: txResult.referrer.email,
+        subject: `[KTSQR] Có lượt đăng ký mới từ khách hàng ${data.full_name}`,
+        html: `
+          <div style="font-family: Arial, sans-serif; padding: 20px;">
+            <h3>Có lượt đăng ký mới cần duyệt!</h3>
+            <p>Chào <strong>${this.escapeHtml(txResult.referrer.name)}</strong>,</p>
+            <p>Khách hàng <strong>${this.escapeHtml(data.full_name)}</strong> (SĐT: ${this.escapeHtml(data.phone)}, Email: ${this.escapeHtml(data.email)}) vừa đăng ký tham dự sự kiện <strong>${this.escapeHtml(invite.event_name)}</strong> qua link của bạn.</p>
+            <p>Vui lòng đăng nhập hệ thống để xem và phê duyệt.</p>
+          </div>
+        `,
+      });
+    }
+
+    try {
+      Realtime.emitRegistrationNew({
+        registrationId: txResult.regId,
+        eventId: invite.event_id,
+        eventName: invite.event_name,
+        customerId: actualCustomerId,
+        fullName: data.full_name,
+        phone: data.phone,
+        email: data.email,
+        referrerId: invite.referrer_id,
+        referrerName: txResult.referrer?.name,
         status: 'PENDING',
-        token: customerToken,
-        user: {
-          id: actualCustomerId,
-          name: data.full_name,
-          email: data.email,
-          phone: data.phone,
-          type: 'CUSTOMER',
-          permissions: [],
-        },
-        message: msg,
-      };
-    });
+        createdAt: new Date().toISOString(),
+      });
+    } catch (rtErr) {
+      console.warn('[Realtime] Failed to emit pending registration:', rtErr);
+    }
+
+    return txResult.payload;
   }
 
   // List registrations with RBAC filtering
@@ -368,7 +528,7 @@ export class RegistrationsService {
     // 1. Fetch registration details
     const rows = await query<any[]>(
       `SELECT r.*, e.name as event_name, e.start_at as event_start_at, e.location as event_location,
-              e.approval_mode as event_approval_mode,
+              e.map_url as event_map_url, e.approval_mode as event_approval_mode,
               u_cust.email as customer_email, u_ref.name as referrer_name
        FROM registrations r
        JOIN events e ON r.event_id = e.id
@@ -436,7 +596,7 @@ export class RegistrationsService {
     // Final Approval (either REFERRER_ONLY or Admin approving)
     const ticketCode = this.generateTicketCode(reg.event_id, reg.id);
 
-    return await withTransaction(async (conn) => {
+    const ticketId = await withTransaction(async (conn) => {
       // Update registration status
       await conn.query(
         `UPDATE registrations 
@@ -452,77 +612,46 @@ export class RegistrationsService {
         [regId, reg.event_id, ticketCode]
       );
 
-      // Send Ticket Email to Customer
-      const ticketUrl = `${ENV.FRONTEND_URL}/my-ticket`;
-      const html = `
-        <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 25px; border: 2px solid #0284c7; border-radius: 10px;">
-          <h2 style="color: #0284c7; text-align: center;">VÉ THAM DỰ SỰ KIỆN KTSQR HỢP LỆ</h2>
-          <p>Kính gửi <strong>${reg.full_name}</strong>,</p>
-          <p>Yêu cầu tham dự sự kiện của bạn đã được phê duyệt chính thức!</p>
-          <div style="background-color: #f8fafc; padding: 15px; border-radius: 8px; margin: 20px 0;">
-            <p><strong>Sự kiện:</strong> ${reg.event_name}</p>
-            <p><strong>Địa điểm:</strong> ${reg.event_location}</p>
-            <p><strong>Thời gian:</strong> ${new Date(reg.event_start_at).toLocaleString('vi-VN')}</p>
-            <p><strong>Mã số vé:</strong> <span style="font-family: monospace; font-size: 18px; font-weight: bold; color: #b91c1c;">${ticketCode}</span></p>
-          </div>
-          <p style="text-align: center;">
-            <a href="${ticketUrl}" style="background-color: #0284c7; color: white; padding: 12px 24px; text-decoration: none; border-radius: 6px; font-weight: bold; display: inline-block;">
-              XEM MÃ QR VÉ CỦA BẠN
-            </a>
-          </p>
-          <p style="font-size: 13px; color: #64748b; margin-top: 20px;">
-            * Mỗi mã QR chỉ có giá trị check-in <strong>ĐÚNG 1 LẦN</strong>. Vui lòng xuất trình mã QR tại cổng kiểm soát.
-          </p>
-        </div>
-      `;
-
-      await sendEmail({
-        to: reg.email,
-        subject: `[KTSQR] Vé tham dự chính thức: ${reg.event_name}`,
-        html,
-      });
-
-      // Generate QR Code data URL for realtime push to customer wallet & staff dashboard
-      try {
-        const qrDataUrl = await QRCode.toDataURL(ticketCode, {
-          errorCorrectionLevel: 'H',
-          margin: 2,
-          width: 360,
-          color: { dark: '#0f172a', light: '#ffffff' },
-        });
-
-        Realtime.emitRegistrationApproved({
-          registrationId: regId,
-          eventId: reg.event_id,
-          eventName: reg.event_name,
-          customerId: reg.customer_id,
-          referrerId: reg.referrer_id,
-          status: 'APPROVED',
-          ticket: {
-            id: tktRes.insertId,
-            code: ticketCode,
-            status: 'ISSUED',
-            qr_image: qrDataUrl,
-            event_id: reg.event_id,
-            event_name: reg.event_name,
-            event_location: reg.event_location,
-            event_start_at: reg.event_start_at,
-            full_name: reg.full_name,
-            phone: reg.phone,
-            referrer_name: reg.referrer_name,
-          },
-        });
-      } catch (rtErr) {
-        console.warn('[Realtime] Failed to emit approval:', rtErr);
-      }
-
-      return {
-        ticket_id: tktRes.insertId,
-        code: ticketCode,
-        status: 'APPROVED',
-        message: 'Đã duyệt đăng ký và cấp vé QR thành công.',
-      };
+      return tktRes.insertId as number;
     });
+
+    const recipientEmail = reg.email || reg.customer_email;
+    const mailRes = recipientEmail
+      ? await this.sendApprovedTicketEmail({
+          to: recipientEmail,
+          fullName: reg.full_name,
+          eventName: reg.event_name,
+          eventLocation: reg.event_location,
+          eventMapUrl: reg.event_map_url,
+          eventStartAt: reg.event_start_at,
+          ticketCode,
+          referrerName: reg.referrer_name,
+          isAutoApproved: false,
+        })
+      : { sent: false, simulated: false };
+
+    await this.emitApprovedTicketRealtime({
+      registrationId: regId,
+      eventId: reg.event_id,
+      eventName: reg.event_name,
+      customerId: reg.customer_id,
+      referrerId: reg.referrer_id,
+      ticketId,
+      ticketCode,
+      eventLocation: reg.event_location,
+      eventStartAt: reg.event_start_at,
+      fullName: reg.full_name,
+      phone: reg.phone,
+      referrerName: reg.referrer_name,
+    });
+
+    return {
+      ticket_id: ticketId,
+      code: ticketCode,
+      status: 'APPROVED',
+      email_sent: mailRes.sent,
+      message: 'Đã duyệt đăng ký và cấp vé QR thành công.',
+    };
   }
 
   // Staff rejects registration

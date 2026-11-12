@@ -58,6 +58,7 @@ const customerName = ref('');
 const customerPhone = ref('');
 const otpCode = ref('');
 const otpSent = ref(false);
+const otpIsSimulation = ref(false);
 const sendingOtp = ref(false);
 const customerError = ref('');
 const customerMessage = ref('');
@@ -131,17 +132,23 @@ const handleSendOtp = async () => {
   sendingOtp.value = true;
   try {
     const res = await auth.sendOtp(customerEmail.value.trim());
-    if (res.data?.data?.token) {
+    const data = res.data?.data || {};
+    if (data.token) {
       // Người tham gia đã từng có tài khoản -> Không cần nhập mã OTP!
-      customerMessage.value = res.data?.data?.message || 'Đã nhận diện vé của bạn! Đang mở mã QR...';
+      customerMessage.value = data.message || 'Đã nhận diện vé của bạn! Đang mở mã QR...';
       setTimeout(() => {
         router.push('/my-ticket');
       }, 400);
       return;
     }
     otpSent.value = true;
-    otpCode.value = '123456'; // Tự động điền sẵn mã 123456 để test nhanh
-    customerMessage.value = res.data?.data?.message || 'Mã xác thực OTP kiểm thử là: 123456';
+    otpIsSimulation.value = Boolean(data.is_simulation);
+    otpCode.value = otpIsSimulation.value ? (data.demo_otp || '123456') : '';
+    customerMessage.value =
+      data.message ||
+      (otpIsSimulation.value
+        ? 'Mã xác thực OTP kiểm thử là: 123456'
+        : 'Mã xác thực OTP gồm 6 chữ số đã được gửi tới email của bạn. Vui lòng kiểm tra hộp thư (kể cả mục Spam).');
   } catch (err: any) {
     customerError.value = err.response?.data?.message || err.message || 'Không thể gửi mã xác thực.';
   } finally {
@@ -262,7 +269,7 @@ const onOtpInput = (e: Event) => {
               <span class="text-[11px] font-bold uppercase tracking-wider text-primary-600">Dành cho Khách tham gia</span>
               <h2 class="text-2xl font-black text-slate-900 tracking-tight mt-0.5">Kiểm tra vé tham dự</h2>
               <p class="text-xs text-slate-500 mt-1 leading-relaxed">
-                Nhập email bạn đã đăng ký vé. Khách đã có tài khoản sẽ tự động xem vé ngay mà không cần nhập mã OTP.
+                Nhập email bạn đã đăng ký vé để nhận mã OTP xác thực qua email và xem mã QR tham dự.
               </p>
             </div>
 
@@ -300,7 +307,9 @@ const onOtpInput = (e: Event) => {
             <!-- BƯỚC 2: NHẬP OTP -->
             <form v-else @submit.prevent="handleVerifyOtp" class="space-y-4">
               <div>
-                <label class="field-label" for="otp">Mã xác thực 6 số (Mặc định test: 123456)</label>
+                <label class="field-label" for="otp">
+                  {{ otpIsSimulation ? 'Mã xác thực 6 số (Chế độ test: 123456)' : 'Nhập mã xác thực 6 số vừa gửi về email' }}
+                </label>
                 <input
                   id="otp"
                   :value="otpCode"
@@ -309,7 +318,7 @@ const onOtpInput = (e: Event) => {
                   inputmode="numeric"
                   maxlength="6"
                   required
-                  placeholder="123456"
+                  :placeholder="otpIsSimulation ? '123456' : '••••••'"
                   class="field text-center font-mono text-2xl tracking-widest"
                   autofocus
                 />
@@ -320,9 +329,21 @@ const onOtpInput = (e: Event) => {
                 <ArrowRight class="h-[18px] w-[18px]" />
               </button>
 
-              <div class="text-center pt-1">
-                <button type="button" @click="otpSent = false" class="text-xs font-semibold text-slate-500 hover:text-slate-800">
+              <div class="flex items-center justify-between pt-1">
+                <button
+                  type="button"
+                  @click="otpSent = false; otpCode = ''; customerMessage = ''; customerError = ''"
+                  class="text-xs font-semibold text-slate-500 hover:text-slate-800"
+                >
                   ← Nhập lại email khác
+                </button>
+                <button
+                  type="button"
+                  :disabled="sendingOtp"
+                  @click="handleSendOtp"
+                  class="text-xs font-bold text-primary-600 hover:underline disabled:opacity-50"
+                >
+                  {{ sendingOtp ? 'Đang gửi lại...' : 'Gửi lại mã OTP' }}
                 </button>
               </div>
             </form>

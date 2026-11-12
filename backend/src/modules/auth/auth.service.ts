@@ -1,8 +1,9 @@
+import crypto from 'crypto';
 import bcrypt from 'bcrypt';
 import jwt from 'jsonwebtoken';
 import { query } from '../../config/database';
 import { ENV } from '../../config/env';
-import { sendEmail } from '../../config/mailer';
+import { isRealSmtpConfigured, sendEmailWithResult } from '../../config/mailer';
 
 export class AuthService {
   private static async getTenantContext(userId: number, required = true) {
@@ -133,7 +134,7 @@ export class AuthService {
     };
   }
 
-  // Customer Send OTP (Khách tham gia nhận vé QR - Nếu đã từng có tài khoản thì không cần OTP)
+  // Customer Send OTP (Gửi mã OTP 6 số tới email; nếu chưa cấu hình SMTP thật sẽ chạy chế độ kiểm thử)
   static async sendOtp(email: string) {
     const cleanEmail = email.trim().toLowerCase();
 
@@ -178,83 +179,92 @@ export class AuthService {
       }
     }
 
-    // NẾU NGƯỜI THAM GIA ĐÃ TỪNG CÓ TÀI KHOẢN:
     if (user) {
       if (user.status !== 'ACTIVE') {
         throw new Error('Tài khoản của bạn đã bị khóa.');
       }
-
-      // Khách tham gia sự kiện đã từng có tài khoản -> BỎ QUA MÃ OTP, CẤP TOKEN VÀ ĐĂNG NHẬP THẲNG
-      if (user.type === 'CUSTOMER') {
-        const token = jwt.sign(
-          { id: user.id, email: user.email, type: user.type },
-          ENV.JWT_SECRET,
-          { expiresIn: '7d' }
-        );
-
-        return {
-          already_exists: true,
-          token,
-          user: {
-            id: user.id,
-            name: user.name,
-            email: user.email,
-            phone: user.phone,
-            type: user.type,
-            permissions: [],
-          },
-          message: 'Tài khoản đã tồn tại trên hệ thống. Đang mở vé QR của bạn...',
-        };
-      } else {
+      if (user.type !== 'CUSTOMER') {
         throw new Error('Email này thuộc tài khoản ban tổ chức hoặc quản trị viên. Vui lòng đăng nhập tại cổng quản trị bằng mật khẩu.');
       }
     }
 
-    // 3. Nếu là người dùng mới chưa từng có tài khoản:
-    // Generate 6-digit OTP (Mặc định '123456' để dễ dàng test thử)
-    const otp = '123456';
-    const expiresAt = new Date(Date.now() + 60 * 60 * 1000); // 60 phút hiệu lực
+    const realSmtp = await isRealSmtpConfigured();
+    const otp = realSmtp
+      ? crypto.randomInt(100000, 1000000).toString()
+      : '123456';
+    const expiresAt = new Date(Date.now() + 10 * 60 * 1000); // 10 phút hiệu lực
 
-    const defaultName = cleanEmail.split('@')[0];
-    await query(
-      `INSERT INTO users (type, name, email, otp_code, otp_expires_at, status) 
-       VALUES ('CUSTOMER', ?, ?, ?, ?, 'ACTIVE')`,
-      [defaultName, cleanEmail, otp, expiresAt]
-    );
+    if (user) {
+      await query(
+        'UPDATE users SET otp_code = ?, otp_expires_at = ? WHERE id = ?',
+        [otp, expiresAt, user.id]
+      );
+    } else {
+      const defaultName = cleanEmail.split('@')[0];
+      await query(
+        `INSERT INTO users (type, name, email, otp_code, otp_expires_at, status) 
+         VALUES ('CUSTOMER', ?, ?, ?, ?, 'ACTIVE')`,
+        [defaultName, cleanEmail, otp, expiresAt]
+      );
+    }
 
-    // Send Real Email with HTML formatting
     const html = `
-      <div style="font-family: Arial, sans-serif; max-width: 500px; margin: 0 auto; padding: 20px; border: 1px solid #e2e8f0; border-radius: 8px;">
-        <h2 style="color: #1e3a8a; text-align: center;">Mã Xác Thực OTP</h2>
-        <p>Xin chào quý khách,</p>
-        <p>Bạn đang thực hiện đăng nhập hoặc đăng ký tham gia sự kiện. Dưới đây là mã OTP của bạn:</p>
-        <div style="background-color: #f1f5f9; padding: 15px; text-align: center; border-radius: 6px; font-size: 28px; font-weight: bold; letter-spacing: 5px; color: #0284c7;">
-          ${otp}
+      <div style="font-family: 'Segoe UI', Arial, sans-serif; max-width: 520px; margin: 0 auto; padding: 28px; border: 1px solid #e2e8f0; border-radius: 14px; background-color: #ffffff;">
+        <div style="text-align: center; margin-bottom: 18px;">
+          <span style="display: inline-block; background-color: #eff6ff; color: #1d4ed8; font-weight: 700; font-size: 12px; padding: 6px 12px; border-radius: 999px; letter-spacing: 0.5px;">
+            KTSQR EVENT CHECK-IN
+          </span>
         </div>
-        <p style="color: #64748b; font-size: 13px; margin-top: 15px;">
-          * Mã xác thực mặc định thử nghiệm: <strong>123456</strong>.
+        <h2 style="color: #0f172a; text-align: center; margin: 0 0 12px 0; font-size: 22px;">Mã Xác Thực OTP</h2>
+        <p style="color: #334155; font-size: 14px; line-height: 1.6;">Xin chào quý khách,</p>
+        <p style="color: #334155; font-size: 14px; line-height: 1.6;">
+          Vui lòng nhập mã OTP gồm 6 chữ số dưới đây để xác thực email đăng ký sự kiện hoặc tra cứu vé QR của bạn:
+        </p>
+        <div style="background-color: #f8fafc; border: 1px dashed #93c5fd; padding: 18px; text-align: center; border-radius: 10px; margin: 20px 0;">
+          <span style="font-family: monospace; font-size: 32px; font-weight: 800; letter-spacing: 8px; color: #0284c7;">${otp}</span>
+        </div>
+        <p style="color: #64748b; font-size: 13px; line-height: 1.5; margin: 0;">
+          • Mã có hiệu lực trong vòng <strong>10 phút</strong>.<br/>
+          • Vui lòng không chia sẻ mã này cho người khác. Nếu bạn không thực hiện yêu cầu này, hãy bỏ qua email.
         </p>
       </div>
     `;
 
-    await sendEmail({
+    const mailRes = await sendEmailWithResult({
       to: cleanEmail,
-      subject: `[Event QR] Mã OTP đăng nhập của bạn: ${otp}`,
+      subject: `[KTSQR] Mã xác thực OTP của bạn: ${otp}`,
       html,
     });
 
-    return { 
+    if (realSmtp && !mailRes.sent) {
+      throw new Error(`Không thể gửi mã OTP tới ${cleanEmail}. Vui lòng kiểm tra lại cấu hình SMTP trong trang Admin (${mailRes.error || 'Lỗi gửi email'}).`);
+    }
+
+    if (mailRes.simulated) {
+      return {
+        already_exists: false,
+        is_simulation: true,
+        demo_otp: otp,
+        message: 'Hệ thống chưa cấu hình SMTP gửi thư thật. Đang dùng mã OTP kiểm thử: 123456',
+      };
+    }
+
+    return {
       already_exists: false,
-      message: 'Mã xác thực OTP đã sẵn sàng! Mã mặc định kiểm thử là: 123456' 
+      is_simulation: false,
+      message: `Đã gửi mã OTP 6 số tới email ${cleanEmail}. Vui lòng kiểm tra hộp thư đến (hoặc thư mục Spam).`,
     };
   }
 
   // Customer Verify OTP
   static async verifyOtp(email: string, otp: string, name?: string, phone?: string) {
+    const cleanEmail = email.trim().toLowerCase();
+    const cleanOtp = otp.trim();
+
     const users = await query<any[]>(
       `SELECT id, type, name, email, phone, otp_code, otp_expires_at, status 
-       FROM users WHERE email = ?`,
-      [email]
+       FROM users WHERE LOWER(email) = ?`,
+      [cleanEmail]
     );
 
     if (users.length === 0) {
@@ -269,12 +279,13 @@ export class AuthService {
       throw new Error('Tài khoản đã bị khóa.');
     }
 
-    const isMasterOtp = otp === '123456';
-    if (!isMasterOtp && (!user.otp_code || user.otp_code !== otp)) {
+    const realSmtp = await isRealSmtpConfigured();
+    const isMasterOtp = !realSmtp && cleanOtp === '123456';
+    if (!isMasterOtp && (!user.otp_code || user.otp_code !== cleanOtp)) {
       throw new Error('Mã OTP không chính xác.');
     }
 
-    if (!isMasterOtp && new Date() > new Date(user.otp_expires_at)) {
+    if (!isMasterOtp && (!user.otp_expires_at || new Date() > new Date(user.otp_expires_at))) {
       throw new Error('Mã OTP đã hết hạn. Vui lòng yêu cầu mã mới.');
     }
 
