@@ -63,7 +63,9 @@ export async function getEffectiveSmtpConfig(): Promise<SmtpConfig> {
     const port = Number(dbSettings.smtp_port) || 587;
     const user = dbSettings.smtp_user.trim();
     const fromName = (dbSettings.smtp_from_name || dbSettings.smtp_sender_name || ENV.SMTP_FROM_NAME || 'KTSQR Event System').trim();
-    const fromEmail = (dbSettings.smtp_from_email || user).trim();
+    const rawFromEmail = (dbSettings.smtp_from_email || '').trim();
+    const fromEmail =
+      rawFromEmail && !PLACEHOLDER_USERS.has(rawFromEmail.toLowerCase()) ? rawFromEmail : user;
     return {
       configured: true,
       host: (dbSettings.smtp_host || ENV.SMTP_HOST || 'smtp.gmail.com').trim(),
