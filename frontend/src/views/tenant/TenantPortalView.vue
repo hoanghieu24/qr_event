@@ -1911,8 +1911,7 @@ onBeforeUnmount(stopScanner);
     <header class="sticky top-0 z-40 bg-white border-b border-slate-200 px-3 sm:px-8 h-16 flex items-center justify-between gap-2 shadow-xs">
       <div class="flex items-center gap-2 shrink-0">
         <a class="brand-lockup flex items-center gap-1.5" href="#">
-          <span class="grid h-8 w-8 sm:h-9 sm:w-9 place-items-center rounded-xl bg-primary-700 text-white"><QrCode :size="18" /></span>
-          <span class="text-sm sm:text-base font-black tracking-tight text-slate-900">KTS<span class="text-primary-600">QR</span></span>
+          <img src="/logo-transparent.png" alt="EventGo.vn" class="h-8 w-auto object-contain" />
         </a>
         <div class="hidden sm:block h-6 w-px bg-slate-200 mx-1"></div>
         <div class="hidden sm:flex flex-col">
@@ -3034,7 +3033,7 @@ onBeforeUnmount(stopScanner);
   <div v-else class="app-shell">
     <aside class="sidebar">
       <a class="brand-lockup sidebar-brand" href="#">
-        <span class="brand-icon"><QrCode :size="21" /></span><span>KTS<span>QR</span></span>
+        <img src="/logo-transparent.png" alt="EventGo.vn" class="h-8 w-auto object-contain" />
       </a>
       <div class="sidebar-caption">KHÔNG GIAN TỔ CHỨC</div>
       <button class="tenant-switch">
@@ -3098,7 +3097,7 @@ onBeforeUnmount(stopScanner);
     <main class="main-area">
       <header class="topbar">
         <div class="mobile-brand">
-          <span class="brand-icon"><QrCode :size="19" /></span>KTS<span>QR</span>
+          <img src="/logo-transparent.png" alt="EventGo.vn" class="h-7 w-auto object-contain" />
         </div>
         <div class="topbar-title">
           <span class="eyebrow">{{ selectedEvent ? 'KHÔNG GIAN SỰ KIỆN' : 'CỔNG KHÁCH THUÊ' }}</span>
@@ -4547,7 +4546,7 @@ onBeforeUnmount(stopScanner);
               <label class="modern-label">Tên sự kiện <span class="required">*</span></label>
               <div class="modern-input-wrap">
                 <Tag :size="16" class="input-icon-left" />
-                <input v-model="eventForm.name" required class="modern-input" placeholder="Ví dụ: Lễ Ra Mắt Sản Phẩm KTS 2026" />
+                <input v-model="eventForm.name" required class="modern-input" placeholder="Ví dụ: Lễ Ra Mắt Sản Phẩm Mới 2026" />
               </div>
             </div>
 

@@ -79,16 +79,8 @@ const handleAdminLogin = async () => {
         </div>
 
         <div class="flex items-center justify-center gap-3">
-          <div class="grid h-12 w-12 place-items-center rounded-2xl bg-gradient-to-br from-indigo-500 to-rose-600 text-white shadow-lg shadow-indigo-500/25">
-            <ShieldCheck class="h-6 w-6" />
-          </div>
-          <div class="text-left">
-            <div class="text-2xl font-black text-white tracking-tight flex items-center gap-1.5">
-              KTS<span class="text-rose-400">QR</span>
-              <span class="text-[10px] font-bold bg-rose-500/20 text-rose-300 border border-rose-500/30 px-2 py-0.5 rounded-md">ADMIN</span>
-            </div>
-            <p class="text-xs text-slate-400">Security & Platform Control Center</p>
-          </div>
+          <img src="/logo-white.png" alt="EventGo.vn" class="h-11 w-auto object-contain" />
+          <span class="text-[10px] font-bold bg-rose-500/20 text-rose-300 border border-rose-500/30 px-2.5 py-1 rounded-lg">ADMIN</span>
         </div>
       </div>
 
@@ -175,7 +167,7 @@ const handleAdminLogin = async () => {
             <Server class="h-3.5 w-3.5 text-slate-600" />
             Bảo mật SSL 256-bit
           </span>
-          <span>© 2026 KTSQR Admin</span>
+          <span>© 2026 EventGo.vn Admin</span>
         </div>
       </div>
     </div>

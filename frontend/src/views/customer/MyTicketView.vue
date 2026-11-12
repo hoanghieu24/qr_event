@@ -177,7 +177,7 @@ const handleEnableNotifications = async () => {
   notificationAllowed.value = granted;
   if (granted) {
     showBrowserNotification('🔔 Đã bật thông báo thành công!', {
-      body: 'Hệ thống KTSQR sẽ nhắc nhở bạn khi vé được duyệt và khi sắp đến ngày diễn ra sự kiện.',
+      body: 'Hệ thống EventGo.vn sẽ nhắc nhở bạn khi vé được duyệt và khi sắp đến ngày diễn ra sự kiện.',
     });
   }
 };
@@ -313,7 +313,7 @@ onUnmounted(() => {
         <Ticket class="w-7 h-7" />
       </div>
       <p class="text-sm font-bold text-slate-800">Đang tải danh sách vé điện tử...</p>
-      <p class="text-xs text-slate-400">Đồng bộ mã QR bảo mật từ hệ thống KTSQR</p>
+      <p class="text-xs text-slate-400">Đồng bộ mã QR bảo mật từ hệ thống EventGo.vn</p>
     </div>
 
     <!-- Error State -->
@@ -446,7 +446,7 @@ onUnmounted(() => {
               <div class="flex items-center gap-2">
                 <span class="px-2.5 py-1 bg-white/10 backdrop-blur-md text-primary-300 font-black text-[10px] rounded-lg tracking-wider uppercase border border-white/10 flex items-center gap-1">
                   <Ticket class="w-3 h-3" />
-                  KTSQR PASS
+                  EventGo.vn PASS
                 </span>
                 <span v-if="ticketsList.length > 1" class="text-[11px] text-slate-400 font-mono">
                   #{{ selectedIndex + 1 }}/{{ ticketsList.length }}
@@ -646,7 +646,7 @@ onUnmounted(() => {
 
           <a
             :href="activeTicket.qr_image"
-            :download="`ve-ktsqr-${activeTicket.code}.png`"
+            :download="`ve-eventgo-${activeTicket.code}.png`"
             class="btn btn-secondary py-3 text-xs"
           >
             <Download class="w-4 h-4" />

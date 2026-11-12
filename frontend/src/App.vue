@@ -70,10 +70,7 @@ watch(() => route.fullPath, () => (menuOpen.value = false));
     <header class="pt-safe sticky top-0 z-40 border-b border-slate-200/70 bg-white/80 backdrop-blur-xl">
       <div class="mx-auto flex h-14 max-w-6xl items-center gap-4 px-4 sm:h-16 sm:px-6 lg:px-8">
         <router-link to="/" class="flex items-center gap-2.5">
-          <span class="grid h-9 w-9 place-items-center rounded-xl bg-gradient-to-br from-primary-500 to-primary-700 text-white shadow-glow">
-            <QrCode class="h-5 w-5" :stroke-width="2.25" />
-          </span>
-          <span class="text-[17px] font-extrabold tracking-tight text-slate-900">KTS<span class="text-primary-600">QR</span></span>
+          <img src="/logo-transparent.png" alt="EventGo.vn" class="h-8 sm:h-9 w-auto object-contain" />
         </router-link>
 
         <!-- Desktop nav -->

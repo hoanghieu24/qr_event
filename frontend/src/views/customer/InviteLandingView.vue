@@ -357,8 +357,8 @@ const handleSubmitRegistration = async () => {
               <img :src="event.poster_url || FALLBACK_POSTER" :alt="event.name" class="absolute inset-0 h-full w-full object-cover" />
               <div class="absolute inset-0 bg-gradient-to-t from-slate-950/85 via-slate-950/20 to-slate-950/10" />
               <div class="pt-safe absolute inset-x-0 top-0 flex items-center justify-between p-4">
-                <span class="inline-flex items-center gap-1.5 rounded-full bg-white/15 px-3 py-1.5 text-xs font-semibold text-white ring-1 ring-white/25 backdrop-blur-md">
-                  <QrCode class="h-3.5 w-3.5" /> KTSQR
+                <span class="inline-flex items-center gap-1.5 rounded-full bg-white/20 px-3 py-1 text-xs font-semibold text-white ring-1 ring-white/30 backdrop-blur-md">
+                  <img src="/icon.png" alt="EventGo.vn" class="h-4 w-4 rounded-sm object-contain" /> EventGo.vn
                 </span>
                 <span class="inline-flex items-center gap-1.5 rounded-full bg-emerald-500/90 px-3 py-1.5 text-xs font-semibold text-white backdrop-blur-md">
                   <ShieldCheck class="h-3.5 w-3.5" /> Thư mời chính thức

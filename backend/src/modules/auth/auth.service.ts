@@ -212,7 +212,7 @@ export class AuthService {
       <div style="font-family: 'Segoe UI', Arial, sans-serif; max-width: 520px; margin: 0 auto; padding: 28px; border: 1px solid #e2e8f0; border-radius: 14px; background-color: #ffffff;">
         <div style="text-align: center; margin-bottom: 18px;">
           <span style="display: inline-block; background-color: #eff6ff; color: #1d4ed8; font-weight: 700; font-size: 12px; padding: 6px 12px; border-radius: 999px; letter-spacing: 0.5px;">
-            KTSQR EVENT CHECK-IN
+            EVENTGO.VN EVENT CHECK-IN
           </span>
         </div>
         <h2 style="color: #0f172a; text-align: center; margin: 0 0 12px 0; font-size: 22px;">Mã Xác Thực OTP</h2>
@@ -232,7 +232,7 @@ export class AuthService {
 
     const mailRes = await sendEmailWithResult({
       to: cleanEmail,
-      subject: `[KTSQR] Mã xác thực OTP của bạn: ${otp}`,
+      subject: `[EventGo.vn] Mã xác thực OTP của bạn: ${otp}`,
       html,
     });
 
