@@ -20,6 +20,7 @@ router.post('/', authenticate, requireAdmin, UsersController.createUser);
 router.put('/:id/status', authenticate, requireAdmin, UsersController.updateUserStatus);
 router.put('/:id/role', authenticate, requireAdmin, UsersController.updateRole);
 router.put('/:id/reset-password', authenticate, requireAdmin, UsersController.resetPassword);
+router.get('/:id/dependencies', authenticate, requireAdmin, UsersController.getUserDependencies);
 router.delete('/:id', authenticate, requireAdmin, UsersController.deleteUser);
 
 export default router;

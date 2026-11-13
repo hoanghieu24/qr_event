@@ -126,19 +126,32 @@ const testEmailResult = ref<{ success: boolean; message: string } | null>(null);
 // Master Admin: All users state
 const allUsersList = ref<any[]>([]);
 const userSearch = ref('');
-const userRoleFilter = ref<'ALL' | 'ADMIN' | 'STAFF' | 'CUSTOMER'>('ALL');
+const userRoleFilter = ref<'ALL' | 'ADMIN' | 'TENANT' | 'STAFF' | 'CUSTOMER'>('ALL');
 const userStatusFilter = ref<'ALL' | 'ACTIVE' | 'BLOCKED'>('ALL');
 const showCreateUserModal = ref(false);
 const newUser = ref({
   name: '',
   email: '',
   phone: '',
-  type: 'STAFF' as 'ADMIN' | 'STAFF' | 'CUSTOMER',
+  type: 'STAFF' as 'ADMIN' | 'TENANT_ADMIN' | 'STAFF' | 'CUSTOMER',
   password: 'Staff@123',
 });
 const showResetPasswordModal = ref(false);
 const selectedUserForPassword = ref<any>(null);
 const newPasswordInput = ref('');
+const showDeleteUserModal = ref(false);
+const deleteUserTarget = ref<any>(null);
+const deleteUserDeps = ref<{
+  hasForeignKeyConstraint: boolean;
+  hasRelatedData: boolean;
+  foreignKeyItems: string[];
+  cascadeItems: string[];
+} | null>(null);
+const deleteUserDepsLoading = ref(false);
+const deleteUserPin = ref('');
+const deleteUserError = ref('');
+const deleteUserSubmitting = ref(false);
+const deleteUserLocking = ref(false);
 
 // Modal states
 const showCreateStaffModal = ref(false);
@@ -1179,10 +1192,62 @@ const loadAllUsers = async () => {
   }
 };
 
+const isTenantAccount = (user: any) =>
+  user?.type === 'TENANT_ADMIN' || Boolean(user?.is_tenant_account);
+
+const getUserTheme = (user: any) => {
+  if (user?.type === 'ADMIN') {
+    return {
+      category: 'ADMIN',
+      label: 'Admin hệ thống',
+      avatarClass: 'bg-purple-600 text-white shadow-xs ring-2 ring-purple-200',
+      badgeClass: 'bg-purple-100 text-purple-800 border border-purple-200 font-bold',
+      rowClass: 'bg-purple-50/30 hover:bg-purple-50/60 border-l-4 border-l-purple-500',
+      cardClass: 'border-l-4 border-l-purple-500 bg-purple-50/20',
+    };
+  }
+  if (isTenantAccount(user)) {
+    return {
+      category: 'TENANT',
+      label: user?.type === 'TENANT_ADMIN' ? 'Khách thuê' : 'Nhân sự Khách thuê',
+      avatarClass: 'bg-amber-500 text-white shadow-xs ring-2 ring-amber-200',
+      badgeClass: 'bg-amber-100 text-amber-900 border border-amber-300 font-bold',
+      rowClass: 'bg-amber-50/35 hover:bg-amber-50/70 border-l-4 border-l-amber-500',
+      cardClass: 'border-l-4 border-l-amber-500 bg-amber-50/25',
+    };
+  }
+  if (user?.type === 'STAFF') {
+    return {
+      category: 'STAFF',
+      label: 'Nhân viên nội bộ',
+      avatarClass: 'bg-sky-100 text-sky-800 border border-sky-200',
+      badgeClass: 'bg-sky-100 text-sky-800 border border-sky-200 font-bold',
+      rowClass: 'hover:bg-slate-50',
+      cardClass: '',
+    };
+  }
+  return {
+    category: 'CUSTOMER',
+    label: 'Khách hàng',
+    avatarClass: 'bg-emerald-100 text-emerald-800 border border-emerald-200',
+    badgeClass: 'bg-emerald-100 text-emerald-800 border border-emerald-200 font-bold',
+    rowClass: 'hover:bg-slate-50',
+    cardClass: '',
+  };
+};
+
 const filteredAllUsers = computed(() => {
   let list = allUsersList.value;
   if (userRoleFilter.value !== 'ALL') {
-    list = list.filter((u: any) => u.type === userRoleFilter.value);
+    if (userRoleFilter.value === 'TENANT') {
+      list = list.filter((u: any) => isTenantAccount(u));
+    } else if (userRoleFilter.value === 'STAFF') {
+      list = list.filter((u: any) => u.type === 'STAFF' && !isTenantAccount(u));
+    } else if (userRoleFilter.value === 'CUSTOMER') {
+      list = list.filter((u: any) => u.type === 'CUSTOMER' && !isTenantAccount(u));
+    } else {
+      list = list.filter((u: any) => u.type === userRoleFilter.value);
+    }
   }
   if (userStatusFilter.value !== 'ALL') {
     list = list.filter((u: any) => u.status === userStatusFilter.value);
@@ -1192,7 +1257,8 @@ const filteredAllUsers = computed(() => {
     list = list.filter((u: any) =>
       (u.name && u.name.toLowerCase().includes(q)) ||
       (u.email && u.email.toLowerCase().includes(q)) ||
-      (u.phone && u.phone.includes(q))
+      (u.phone && u.phone.includes(q)) ||
+      (u.tenant_names && u.tenant_names.toLowerCase().includes(q))
     );
   }
   return list;
@@ -1253,12 +1319,65 @@ const handleSaveResetPassword = async () => {
 };
 
 const handleDeleteUser = async (user: any) => {
-  if (!confirm(`CẢNH BÁO: Bạn có chắc muốn XÓA vĩnh viễn người dùng ${user.name} (${user.email})?`)) return;
+  deleteUserTarget.value = user;
+  deleteUserPin.value = '';
+  deleteUserError.value = '';
+  deleteUserDeps.value = null;
+  deleteUserDepsLoading.value = true;
+  showDeleteUserModal.value = true;
+
   try {
-    await api.delete(`/users/${user.id}`);
+    const res = await api.get(`/users/${user.id}/dependencies`);
+    deleteUserDeps.value = res.data.data;
+  } catch (e: any) {
+    const hasLocalDeps =
+      Number(user.created_tenants_count || 0) > 0 ||
+      Number(user.created_events_count || 0) > 0;
+    deleteUserDeps.value = {
+      hasForeignKeyConstraint: hasLocalDeps,
+      hasRelatedData: hasLocalDeps || Number(user.registrations_count || 0) > 0 || Number(user.links_count || 0) > 0,
+      foreignKeyItems: hasLocalDeps ? ['Tài khoản đang có dữ liệu khóa phụ (khách thuê / sự kiện đã tạo).'] : [],
+      cascadeItems: [],
+    };
+  } finally {
+    deleteUserDepsLoading.value = false;
+  }
+};
+
+const confirmDeleteUser = async () => {
+  if (!deleteUserTarget.value) return;
+  const cleanPin = deleteUserPin.value.trim();
+  if (!/^\d{4}$/.test(cleanPin)) {
+    deleteUserError.value = 'Vui lòng nhập đủ mật khẩu xác nhận 4 chữ số (ví dụ: xxxx) để xóa vĩnh viễn.';
+    return;
+  }
+  deleteUserSubmitting.value = true;
+  deleteUserError.value = '';
+  try {
+    await api.delete(`/users/${deleteUserTarget.value.id}`, { data: { pin: cleanPin } });
+    showDeleteUserModal.value = false;
+    deleteUserTarget.value = null;
     await Promise.all([loadAllUsers(), loadStaff(), loadSummary()]);
   } catch (e: any) {
-    alert(e.response?.data?.message || e.message);
+    deleteUserError.value = e.response?.data?.message || e.message || 'Không thể xóa người dùng.';
+  } finally {
+    deleteUserSubmitting.value = false;
+  }
+};
+
+const handleLockUserInsteadOfDelete = async () => {
+  if (!deleteUserTarget.value) return;
+  deleteUserLocking.value = true;
+  deleteUserError.value = '';
+  try {
+    await api.put(`/users/${deleteUserTarget.value.id}/status`, { status: 'BLOCKED' });
+    showDeleteUserModal.value = false;
+    deleteUserTarget.value = null;
+    await Promise.all([loadAllUsers(), loadStaff()]);
+  } catch (e: any) {
+    deleteUserError.value = e.response?.data?.message || e.message || 'Không thể khóa tài khoản.';
+  } finally {
+    deleteUserLocking.value = false;
   }
 };
 
@@ -1748,30 +1867,37 @@ const formatOtpTime = (dateStr: string) => {
       </div>
 
       <!-- Quick Role Pills -->
-      <div class="grid grid-cols-2 sm:grid-cols-4 gap-3">
+      <div class="grid grid-cols-2 sm:grid-cols-5 gap-3">
         <div class="card p-4 space-y-1">
           <div class="text-[10px] font-bold text-slate-400 uppercase">Tất cả</div>
           <div class="text-2xl font-black text-slate-900">{{ allUsersList.length }}</div>
           <div class="text-[10px] text-slate-500">Tài khoản</div>
         </div>
-        <div class="card p-4 space-y-1 bg-purple-50/50 border-purple-200">
+        <div class="card p-4 space-y-1 bg-purple-50/70 border-purple-200">
           <div class="text-[10px] font-bold text-purple-700 uppercase">Admin</div>
           <div class="text-2xl font-black text-purple-900">
             {{ allUsersList.filter(u => u.type === 'ADMIN').length }}
           </div>
-          <div class="text-[10px] text-purple-600">Quyền cao nhất</div>
+          <div class="text-[10px] text-purple-600">Quản trị hệ thống</div>
         </div>
-        <div class="card p-4 space-y-1 bg-primary-50/50 border-primary-200">
-          <div class="text-[10px] font-bold text-primary-700 uppercase">Nhân viên</div>
-          <div class="text-2xl font-black text-primary-900">
-            {{ allUsersList.filter(u => u.type === 'STAFF').length }}
+        <div class="card p-4 space-y-1 bg-amber-50/70 border-amber-300">
+          <div class="text-[10px] font-bold text-amber-800 uppercase">Khách thuê</div>
+          <div class="text-2xl font-black text-amber-950">
+            {{ allUsersList.filter(u => isTenantAccount(u)).length }}
           </div>
-          <div class="text-[10px] text-primary-600">Soát vé & Mời khách</div>
+          <div class="text-[10px] text-amber-700">Chủ & Nhân sự thuê</div>
+        </div>
+        <div class="card p-4 space-y-1 bg-sky-50/60 border-sky-200">
+          <div class="text-[10px] font-bold text-sky-700 uppercase">Nhân viên</div>
+          <div class="text-2xl font-black text-sky-900">
+            {{ allUsersList.filter(u => u.type === 'STAFF' && !isTenantAccount(u)).length }}
+          </div>
+          <div class="text-[10px] text-sky-600">Nội bộ hệ thống</div>
         </div>
         <div class="card p-4 space-y-1 bg-emerald-50/50 border-emerald-200">
           <div class="text-[10px] font-bold text-emerald-700 uppercase">Khách hàng</div>
           <div class="text-2xl font-black text-emerald-900">
-            {{ allUsersList.filter(u => u.type === 'CUSTOMER').length }}
+            {{ allUsersList.filter(u => u.type === 'CUSTOMER' && !isTenantAccount(u)).length }}
           </div>
           <div class="text-[10px] text-emerald-600">Khách đăng ký</div>
         </div>
@@ -1779,10 +1905,10 @@ const formatOtpTime = (dateStr: string) => {
 
       <!-- Filters & Search Toolbar -->
       <div class="card p-3 sm:p-4 flex flex-col md:flex-row justify-between items-stretch md:items-center gap-3">
-        <div class="flex flex-wrap gap-1 text-xs font-bold">
+        <div class="flex flex-wrap gap-1.5 text-xs font-bold">
           <button
             @click="userRoleFilter = 'ALL'"
-            :class="userRoleFilter === 'ALL' ? 'bg-primary-600 text-white' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'"
+            :class="userRoleFilter === 'ALL' ? 'bg-slate-900 text-white' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'"
             class="px-3 py-1.5 rounded-lg transition"
           >
             Tất cả
@@ -1795,18 +1921,25 @@ const formatOtpTime = (dateStr: string) => {
             Admin
           </button>
           <button
-            @click="userRoleFilter = 'STAFF'"
-            :class="userRoleFilter === 'STAFF' ? 'bg-primary-600 text-white' : 'bg-primary-50 text-primary-700 hover:bg-primary-100'"
+            @click="userRoleFilter = 'TENANT'"
+            :class="userRoleFilter === 'TENANT' ? 'bg-amber-600 text-white' : 'bg-amber-50 text-amber-800 hover:bg-amber-100'"
             class="px-3 py-1.5 rounded-lg transition"
           >
-            Staff
+            Khách thuê
+          </button>
+          <button
+            @click="userRoleFilter = 'STAFF'"
+            :class="userRoleFilter === 'STAFF' ? 'bg-sky-600 text-white' : 'bg-sky-50 text-sky-700 hover:bg-sky-100'"
+            class="px-3 py-1.5 rounded-lg transition"
+          >
+            Nhân viên
           </button>
           <button
             @click="userRoleFilter = 'CUSTOMER'"
             :class="userRoleFilter === 'CUSTOMER' ? 'bg-emerald-600 text-white' : 'bg-emerald-50 text-emerald-700 hover:bg-emerald-100'"
             class="px-3 py-1.5 rounded-lg transition"
           >
-            Customer
+            Khách hàng
           </button>
         </div>
 
@@ -1825,7 +1958,7 @@ const formatOtpTime = (dateStr: string) => {
             <input
               v-model="userSearch"
               type="text"
-              placeholder="Tìm tên, SĐT, email..."
+              placeholder="Tìm tên, SĐT, email, đơn vị..."
               class="w-full text-xs pl-8 pr-3 py-2 bg-slate-50 border border-slate-200 rounded-xl focus:bg-white focus:outline-none focus:ring-2 focus:ring-primary-500 transition"
             />
           </div>
@@ -1840,27 +1973,41 @@ const formatOtpTime = (dateStr: string) => {
               <tr>
                 <th class="py-3.5 px-4">Người dùng</th>
                 <th class="py-3.5 px-4">Thông tin liên hệ</th>
-                <th class="py-3.5 px-4">Vai trò (Role)</th>
+                <th class="py-3.5 px-4">Phân loại & Vai trò</th>
                 <th class="py-3.5 px-4">Trạng thái</th>
                 <th class="py-3.5 px-4 text-right">Thao tác</th>
               </tr>
             </thead>
             <tbody class="divide-y divide-slate-100">
-              <tr v-for="user in filteredAllUsers" :key="user.id" class="hover:bg-slate-50">
+              <tr
+                v-for="user in filteredAllUsers"
+                :key="user.id"
+                :class="getUserTheme(user).rowClass"
+                class="transition-colors"
+              >
                 <td class="py-3.5 px-4">
                   <div class="flex items-center gap-3">
                     <div
-                      :class="user.type === 'ADMIN' ? 'bg-purple-100 text-purple-800' : user.type === 'STAFF' ? 'bg-primary-100 text-primary-800' : 'bg-emerald-100 text-emerald-800'"
+                      :class="getUserTheme(user).avatarClass"
                       class="w-9 h-9 rounded-xl font-black text-xs flex items-center justify-center shrink-0 uppercase"
                     >
                       {{ user.name.slice(0, 2) }}
                     </div>
-                    <div>
-                      <div class="font-extrabold text-slate-900 flex items-center gap-1.5">
-                        {{ user.name }}
-                        <span v-if="user.id === 1" class="text-[9px] px-1.5 py-0.2 bg-purple-100 text-purple-700 rounded font-black">ROOT</span>
+                    <div class="min-w-0">
+                      <div class="font-extrabold text-slate-900 flex items-center gap-1.5 flex-wrap">
+                        <span>{{ user.name }}</span>
+                        <span v-if="user.id === 1" class="text-[9px] px-1.5 py-0.5 bg-purple-700 text-white rounded font-black">ROOT</span>
                       </div>
-                      <div class="text-[11px] text-slate-400 font-mono">ID: #{{ user.id }}</div>
+                      <div class="flex items-center gap-1.5 flex-wrap mt-0.5">
+                        <span class="text-[11px] text-slate-400 font-mono">ID: #{{ user.id }}</span>
+                        <span
+                          v-if="user.tenant_names"
+                          class="inline-flex items-center gap-1 text-[10px] px-1.5 py-0.5 rounded bg-amber-100/90 text-amber-900 border border-amber-300 font-semibold"
+                        >
+                          <Building2 class="w-2.5 h-2.5 shrink-0" />
+                          <span class="truncate max-w-[170px]">{{ user.tenant_names }}</span>
+                        </span>
+                      </div>
                     </div>
                   </div>
                 </td>
@@ -1869,17 +2016,18 @@ const formatOtpTime = (dateStr: string) => {
                   <div class="text-[11px] text-slate-400 font-mono">{{ user.phone || '—' }}</div>
                 </td>
                 <td class="py-3.5 px-4">
-                  <div class="flex items-center gap-2">
-                    <span class="chip text-[11px]" :class="user.type === 'ADMIN' ? 'bg-purple-100 text-purple-800' : user.type === 'STAFF' ? 'chip-primary' : 'chip-success'">
-                      {{ user.type }}
+                  <div class="flex items-center gap-2 flex-wrap">
+                    <span class="chip text-[11px]" :class="getUserTheme(user).badgeClass">
+                      {{ getUserTheme(user).label }}
                     </span>
                     <select
                       v-if="user.id !== 1"
                       :value="user.type"
                       @change="handleChangeUserRole(user, ($event.target as HTMLSelectElement).value)"
-                      class="text-[11px] bg-slate-50 border border-slate-200 rounded px-1.5 py-0.5 font-medium text-slate-600 focus:outline-none"
+                      class="text-[11px] bg-white border border-slate-200 rounded px-1.5 py-0.5 font-medium text-slate-600 focus:outline-none"
                     >
                       <option value="ADMIN">ADMIN</option>
+                      <option value="TENANT_ADMIN">TENANT_ADMIN</option>
                       <option value="STAFF">STAFF</option>
                       <option value="CUSTOMER">CUSTOMER</option>
                     </select>
@@ -1916,7 +2064,7 @@ const formatOtpTime = (dateStr: string) => {
                       v-if="user.id !== 1"
                       @click="handleDeleteUser(user)"
                       class="btn btn-danger py-1 px-2 text-[11px]"
-                      title="Xóa vĩnh viễn"
+                      title="Xóa hoặc Khóa tài khoản"
                     >
                       <Trash2 class="w-3 h-3" />
                     </button>
@@ -1938,34 +2086,44 @@ const formatOtpTime = (dateStr: string) => {
         <div
           v-for="user in filteredAllUsers"
           :key="user.id"
+          :class="getUserTheme(user).cardClass"
           class="card p-4 space-y-3"
         >
           <div class="flex items-start justify-between gap-3">
-            <div class="flex items-center gap-3">
+            <div class="flex items-center gap-3 min-w-0">
               <div
-                :class="user.type === 'ADMIN' ? 'bg-purple-100 text-purple-800' : user.type === 'STAFF' ? 'bg-primary-100 text-primary-800' : 'bg-emerald-100 text-emerald-800'"
+                :class="getUserTheme(user).avatarClass"
                 class="w-10 h-10 rounded-xl font-black text-sm flex items-center justify-center shrink-0 uppercase"
               >
                 {{ user.name.slice(0, 2) }}
               </div>
-              <div>
-                <div class="font-extrabold text-slate-900 text-sm flex items-center gap-1.5">
-                  {{ user.name }}
-                  <span v-if="user.id === 1" class="text-[9px] px-1.5 py-0.2 bg-purple-100 text-purple-700 rounded font-black">ROOT</span>
+              <div class="min-w-0">
+                <div class="font-extrabold text-slate-900 text-sm flex items-center gap-1.5 flex-wrap">
+                  <span>{{ user.name }}</span>
+                  <span v-if="user.id === 1" class="text-[9px] px-1.5 py-0.5 bg-purple-700 text-white rounded font-black">ROOT</span>
                 </div>
-                <div class="text-[11px] text-slate-400 font-mono">ID: #{{ user.id }}</div>
+                <div class="flex items-center gap-1.5 flex-wrap mt-0.5">
+                  <span class="text-[11px] text-slate-400 font-mono">ID: #{{ user.id }}</span>
+                  <span class="chip text-[10px]" :class="getUserTheme(user).badgeClass">
+                    {{ getUserTheme(user).label }}
+                  </span>
+                </div>
+                <div v-if="user.tenant_names" class="mt-1 inline-flex items-center gap-1 text-[10px] px-1.5 py-0.5 rounded bg-amber-100 text-amber-900 border border-amber-300 font-semibold">
+                  <Building2 class="w-2.5 h-2.5 shrink-0" />
+                  <span class="truncate max-w-[200px]">{{ user.tenant_names }}</span>
+                </div>
               </div>
             </div>
 
             <span
               :class="user.status === 'ACTIVE' ? 'chip-success' : 'chip-danger'"
-              class="chip text-[10px]"
+              class="chip text-[10px] shrink-0"
             >
               {{ user.status === 'ACTIVE' ? 'Hoạt động' : 'Khóa' }}
             </span>
           </div>
 
-          <div class="bg-slate-50 p-2.5 rounded-xl text-xs space-y-1 text-slate-600">
+          <div class="bg-slate-50/90 p-2.5 rounded-xl text-xs space-y-1 text-slate-600">
             <div class="flex items-center justify-between">
               <span class="text-slate-400 text-[11px]">Email:</span>
               <span class="font-medium text-slate-800 truncate ml-2">{{ user.email }}</span>
@@ -1982,9 +2140,10 @@ const formatOtpTime = (dateStr: string) => {
               <select
                 :value="user.type"
                 @change="handleChangeUserRole(user, ($event.target as HTMLSelectElement).value)"
-                class="text-[11px] bg-slate-100 border border-slate-200 rounded-lg px-2 py-1 font-bold text-slate-700"
+                class="text-[11px] bg-white border border-slate-200 rounded-lg px-2 py-1 font-bold text-slate-700"
               >
                 <option value="ADMIN">ADMIN</option>
+                <option value="TENANT_ADMIN">TENANT_ADMIN</option>
                 <option value="STAFF">STAFF</option>
                 <option value="CUSTOMER">CUSTOMER</option>
               </select>
@@ -2010,6 +2169,7 @@ const formatOtpTime = (dateStr: string) => {
                 v-if="user.id !== 1"
                 @click="handleDeleteUser(user)"
                 class="btn btn-danger py-1 px-2 text-xs"
+                title="Xóa hoặc Khóa tài khoản"
               >
                 <Trash2 class="w-3 h-3" />
               </button>
@@ -4168,6 +4328,7 @@ const formatOtpTime = (dateStr: string) => {
             <label class="block font-bold text-slate-700 mb-1">Vai trò (Role)</label>
             <select v-model="newUser.type" class="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl font-bold text-slate-800">
               <option value="ADMIN">Quản trị viên (ADMIN)</option>
+              <option value="TENANT_ADMIN">Khách thuê / Chủ đơn vị (TENANT_ADMIN)</option>
               <option value="STAFF">Nhân viên (STAFF)</option>
               <option value="CUSTOMER">Khách hàng (CUSTOMER)</option>
             </select>
@@ -4207,6 +4368,131 @@ const formatOtpTime = (dateStr: string) => {
           <div class="flex justify-end gap-2 pt-3 border-t border-slate-100">
             <button type="button" @click="showResetPasswordModal = false" class="btn btn-secondary text-xs">Hủy</button>
             <button type="submit" class="btn btn-primary text-xs shadow-md">Lưu mật khẩu mới</button>
+          </div>
+        </form>
+      </div>
+    </div>
+
+    <!-- MODAL: XÓA HOẶC KHÓA TÀI KHOẢN (KIỂM TRA KHÓA PHỤ + MẬT KHẨU 4 SỐ) -->
+    <div v-if="showDeleteUserModal && deleteUserTarget" class="fixed inset-0 bg-slate-950/80 backdrop-blur-xs z-[85] flex items-center justify-center p-4 overflow-y-auto">
+      <div class="card max-w-md w-full p-6 shadow-2xl space-y-4 my-auto animate-scale-in">
+        <div class="flex justify-between items-start gap-3 pb-3 border-b border-slate-100">
+          <div class="flex items-center gap-3 min-w-0">
+            <div
+              :class="getUserTheme(deleteUserTarget).avatarClass"
+              class="w-10 h-10 rounded-xl font-black text-xs flex items-center justify-center shrink-0 uppercase"
+            >
+              {{ deleteUserTarget.name.slice(0, 2) }}
+            </div>
+            <div class="min-w-0">
+              <h3 class="text-base font-black text-slate-900 truncate">Xử Lý Tài Khoản #{{ deleteUserTarget.id }}</h3>
+              <p class="text-xs text-slate-500 truncate">{{ deleteUserTarget.name }} · {{ deleteUserTarget.email }}</p>
+            </div>
+          </div>
+          <button @click="showDeleteUserModal = false" class="text-slate-400 hover:text-slate-600 p-1">
+            <X class="w-4 h-4" />
+          </button>
+        </div>
+
+        <div v-if="deleteUserDepsLoading" class="flex items-center gap-2 rounded-xl bg-slate-50 border border-slate-200 p-3 text-xs text-slate-600">
+          <RotateCw class="w-4 h-4 animate-spin text-primary-600 shrink-0" />
+          <span>Đang kiểm tra khóa phụ và dữ liệu liên kết...</span>
+        </div>
+
+        <template v-else-if="deleteUserDeps">
+          <div
+            v-if="deleteUserDeps.hasForeignKeyConstraint"
+            class="rounded-xl border border-amber-300 bg-amber-50 p-3.5 text-xs space-y-2 text-amber-950"
+          >
+            <div class="flex items-center gap-1.5 font-black text-amber-900">
+              <AlertTriangle class="w-4 h-4 text-amber-600 shrink-0" />
+              <span>Tài khoản này đang có khóa phụ dữ liệu</span>
+            </div>
+            <ul class="list-disc pl-4 space-y-1 text-[11px] text-amber-900">
+              <li v-for="(item, idx) in deleteUserDeps.foreignKeyItems" :key="'fk-' + idx">{{ item }}</li>
+              <li v-for="(item, idx) in deleteUserDeps.cascadeItems" :key="'cs-' + idx">{{ item }}</li>
+            </ul>
+            <p class="text-[11px] text-amber-800 pt-1 border-t border-amber-200/80">
+              <strong>Khuyên dùng:</strong> Chọn <b>Khóa tài khoản</b> để chặn đăng nhập mà giữ nguyên lịch sử. Nếu vẫn muốn <b>Xóa luôn</b>, hệ thống sẽ tự chuyển quyền đứng tên khóa phụ sang Admin hiện tại và dọn dữ liệu liên quan.
+            </p>
+          </div>
+
+          <div
+            v-else-if="deleteUserDeps.hasRelatedData"
+            class="rounded-xl border border-orange-200 bg-orange-50/80 p-3.5 text-xs space-y-2 text-orange-950"
+          >
+            <div class="flex items-center gap-1.5 font-bold text-orange-900">
+              <AlertTriangle class="w-4 h-4 text-orange-600 shrink-0" />
+              <span>Tài khoản có dữ liệu hoạt động liên quan</span>
+            </div>
+            <ul class="list-disc pl-4 space-y-1 text-[11px] text-orange-900">
+              <li v-for="(item, idx) in deleteUserDeps.cascadeItems" :key="'cs2-' + idx">{{ item }}</li>
+            </ul>
+            <p class="text-[11px] text-orange-800">
+              Bạn có thể chọn <b>Khóa tài khoản</b> để bảo toàn dữ liệu, hoặc nhập mật khẩu 4 số để xóa vĩnh viễn.
+            </p>
+          </div>
+
+          <div
+            v-else
+            class="rounded-xl border border-slate-200 bg-slate-50 p-3 text-xs text-slate-600"
+          >
+            Tài khoản này chưa phát sinh khóa phụ hay sự kiện/vé liên quan. Nếu không muốn xóa, bạn có thể nhấn <b>Khóa tài khoản</b>.
+          </div>
+        </template>
+
+        <form @submit.prevent="confirmDeleteUser" class="space-y-3 text-xs">
+          <div>
+            <label class="block font-bold text-slate-700 mb-1">
+              Mật khẩu 4 số xác nhận XÓA VĨNH VIỄN
+            </label>
+            <input
+              v-model="deleteUserPin"
+              type="password"
+              inputmode="numeric"
+              maxlength="4"
+              autocomplete="off"
+              placeholder="Nhập mã PIN 4 số..."
+              class="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl font-mono text-sm tracking-[0.35em] text-center focus:bg-white focus:outline-none focus:ring-2 focus:ring-rose-500"
+            />
+          </div>
+
+          <div v-if="deleteUserError" class="rounded-lg bg-rose-50 border border-rose-200 px-3 py-2 text-[11px] font-semibold text-rose-700">
+            {{ deleteUserError }}
+          </div>
+
+          <div class="flex flex-wrap items-center justify-end gap-2 pt-3 border-t border-slate-100">
+            <button
+              type="button"
+              @click="showDeleteUserModal = false"
+              class="btn btn-secondary text-xs"
+            >
+              Hủy
+            </button>
+            <button
+              v-if="deleteUserTarget.status === 'ACTIVE'"
+              type="button"
+              :disabled="deleteUserLocking || deleteUserSubmitting"
+              @click="handleLockUserInsteadOfDelete"
+              class="btn bg-amber-100 hover:bg-amber-200 text-amber-900 border border-amber-300 text-xs font-bold"
+            >
+              <Lock class="w-3.5 h-3.5" />
+              <span>{{ deleteUserLocking ? 'Đang khóa...' : 'Khóa (Không xóa)' }}</span>
+            </button>
+            <span
+              v-else
+              class="text-[11px] font-bold text-amber-700 bg-amber-50 border border-amber-200 px-2.5 py-1.5 rounded-lg"
+            >
+              Tài khoản đã khóa
+            </span>
+            <button
+              type="submit"
+              :disabled="deleteUserSubmitting || deleteUserLocking || deleteUserDepsLoading || deleteUserPin.trim().length !== 4"
+              class="btn btn-danger text-xs shadow-md disabled:opacity-50"
+            >
+              <Trash2 class="w-3.5 h-3.5" />
+              <span>{{ deleteUserSubmitting ? 'Đang xóa...' : 'Xóa vĩnh viễn' }}</span>
+            </button>
           </div>
         </form>
       </div>

@@ -111,7 +111,7 @@ export class UsersController {
       if (!req.user) return;
       const userId = parseInt(String(req.params.id), 10);
       const { type } = req.body;
-      if (!['ADMIN', 'STAFF', 'CUSTOMER'].includes(type)) {
+      if (!['ADMIN', 'TENANT_ADMIN', 'STAFF', 'CUSTOMER'].includes(type)) {
         res.status(400).json({ success: false, message: 'Loại tài khoản không hợp lệ.' });
         return;
       }
@@ -149,14 +149,29 @@ export class UsersController {
     }
   }
 
+  static async getUserDependencies(req: Request, res: Response, next: NextFunction) {
+    try {
+      const userId = parseInt(String(req.params.id), 10);
+      const data = await UsersService.getUserDependencies(userId);
+      res.json({ success: true, data });
+    } catch (error: any) {
+      res.status(error.statusCode || 400).json({ success: false, message: error.message });
+    }
+  }
+
   static async deleteUser(req: Request, res: Response, next: NextFunction) {
     try {
       if (!req.user) return;
       const userId = parseInt(String(req.params.id), 10);
-      const result = await UsersService.deleteUser(userId, req.user.id);
+      const pin = req.body?.pin ?? req.query?.pin;
+      const result = await UsersService.deleteUser(userId, req.user.id, pin !== undefined ? String(pin) : undefined);
       res.json({ success: true, data: result });
     } catch (error: any) {
-      res.status(400).json({ success: false, message: error.message });
+      res.status(error.statusCode || 400).json({
+        success: false,
+        code: error.code,
+        message: error.message,
+      });
     }
   }
 }
