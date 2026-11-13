@@ -1,4 +1,4 @@
-const CACHE_NAME = 'ktsqr-v1';
+const CACHE_NAME = 'eventgo-v2';
 const STATIC_ASSETS = ['/', '/index.html'];
 
 self.addEventListener('install', (event) => {
@@ -23,10 +23,12 @@ self.addEventListener('activate', (event) => {
 
 self.addEventListener('fetch', (event) => {
   // Pass through non-GET and API/socket requests directly to network
+  const url = new URL(event.request.url);
   if (
     event.request.method !== 'GET' ||
-    event.request.url.includes('/api/') ||
-    event.request.url.includes('/socket.io/')
+    url.pathname.startsWith('/api/') ||
+    url.pathname.startsWith('/socket.io/') ||
+    url.pathname.startsWith('/assets/')
   ) {
     return;
   }
@@ -34,7 +36,8 @@ self.addEventListener('fetch', (event) => {
   event.respondWith(
     fetch(event.request).catch(() => {
       return caches.match(event.request).then((response) => {
-        return response || caches.match('/');
+        if (response) return response;
+        return event.request.mode === 'navigate' ? caches.match('/') : Response.error();
       });
     })
   );
@@ -43,7 +46,7 @@ self.addEventListener('fetch', (event) => {
 // Listen for push notifications
 self.addEventListener('push', (event) => {
   const data = event.data ? event.data.json() : {};
-  const title = data.title || 'KTSQR Thông Báo Sự Kiện';
+  const title = data.title || 'EventGo Thông Báo Sự Kiện';
   const options = {
     body: data.body || 'Bạn có thông báo mới về vé tham gia sự kiện.',
     icon: '/icon-192.png',

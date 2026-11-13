@@ -2289,10 +2289,10 @@ const formatOtpTime = (dateStr: string) => {
                     <div class="font-bold text-slate-800">{{ staff.email }}</div>
                     <div class="text-[11px] font-mono text-slate-400 mt-0.5">{{ staff.phone || '—' }}</div>
                   </td>
-                  <td class="py-4 px-4">
+                  <td class="py-4 px-4 whitespace-nowrap">
                     <span
                       :class="staff.status === 'ACTIVE' ? 'chip-success' : 'chip-danger'"
-                      class="chip text-[10px] uppercase font-bold"
+                      class="chip text-[10px] uppercase font-bold whitespace-nowrap"
                     >
                       {{ staff.status === 'ACTIVE' ? 'Hoạt động' : 'Đang khóa' }}
                     </span>

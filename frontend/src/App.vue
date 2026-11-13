@@ -4,6 +4,13 @@ import { useRouter, useRoute } from 'vue-router';
 import { ScanLine, Users, ShieldAlert, LayoutDashboard, Ticket, LogOut, QrCode, ChevronDown, Loader2 } from 'lucide-vue-next';
 import { useAuthStore } from './stores/auth';
 import { backendWarmState } from './api/client';
+import {
+  canAccessRoute,
+  getUnauthorizedRedirect,
+  isAuthRedirectInProgress,
+  navigateWithFallback,
+  performLogoutAndRedirect,
+} from './utils/authSession';
 
 const router = useRouter();
 const route = useRoute();
@@ -46,24 +53,49 @@ const navItems = computed(() => {
 });
 
 const isActive = (to: string) => route.path === to || route.path.startsWith(to + '/');
+const isRouteAuthorized = computed(() => !route.matched.length || canAccessRoute(route, auth));
 
-const handleLogout = () => {
+const handleLogout = async () => {
   menuOpen.value = false;
-  const wasAdmin = auth.isAdmin;
-  auth.logout();
-  if (wasAdmin) {
-    router.push('/admin/login');
-  } else {
-    router.push('/khach');
-  }
+  await performLogoutAndRedirect(router, auth);
 };
 
-watch(() => route.fullPath, () => (menuOpen.value = false));
+watch(
+  [() => auth.token, () => auth.user?.type, () => route.fullPath],
+  async () => {
+    menuOpen.value = false;
+    if (!route.matched.length) return;
+    if (auth.token && !auth.user) return;
+    if (isAuthRedirectInProgress()) return;
+
+    if (!canAccessRoute(route, auth)) {
+      const target = getUnauthorizedRedirect(route, auth, false);
+      if (route.path !== target.split('?')[0]) {
+        await navigateWithFallback(router, target, true);
+      }
+    }
+  }
+);
 </script>
 
 <template>
   <div v-if="bareLayout" class="min-h-[100dvh]">
-    <router-view />
+    <router-view v-slot="{ Component, route: r }">
+      <component v-if="Component && canAccessRoute(r, auth)" :is="Component" />
+      <div v-else class="flex min-h-[100dvh] items-center justify-center bg-slate-50 p-6 text-center">
+        <div class="space-y-2">
+          <Loader2 class="mx-auto h-6 w-6 animate-spin text-primary-600" />
+          <p class="text-sm font-semibold text-slate-600">Đang chuyển hướng...</p>
+        </div>
+      </div>
+    </router-view>
+  </div>
+
+  <div v-else-if="!isRouteAuthorized" class="flex min-h-[100dvh] items-center justify-center bg-slate-50 p-6 text-center">
+    <div class="space-y-2">
+      <Loader2 class="mx-auto h-6 w-6 animate-spin text-primary-600" />
+      <p class="text-sm font-semibold text-slate-600">Đang chuyển hướng về trang đăng nhập...</p>
+    </div>
   </div>
 
   <div v-else class="flex min-h-[100dvh] flex-col">
@@ -135,7 +167,7 @@ watch(() => route.fullPath, () => (menuOpen.value = false));
     <!-- Content -->
     <main class="w-full flex-1" :class="auth.isAuthenticated && navItems.length > 1 ? 'pb-24 md:pb-0' : ''">
       <router-view v-slot="{ Component, route: r }">
-        <div :key="r.path" class="animate-page-in">
+        <div v-if="Component && canAccessRoute(r, auth)" :key="r.path" class="animate-page-in">
           <component :is="Component" />
         </div>
       </router-view>

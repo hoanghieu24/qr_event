@@ -41,6 +41,10 @@ export function getSocket(): Socket {
     });
   }
 
+  if (socketInstance && !socketInstance.connected) {
+    socketInstance.connect();
+  }
+
   return socketInstance;
 }
 
@@ -48,8 +52,14 @@ export function refreshSocketAuth() {
   if (socketInstance) {
     const token = localStorage.getItem('token');
     socketInstance.auth = { token };
-    if (socketInstance.connected) {
-      socketInstance.disconnect().connect();
+    if (token) {
+      if (socketInstance.connected) {
+        socketInstance.disconnect().connect();
+      } else {
+        socketInstance.connect();
+      }
+    } else if (socketInstance.connected) {
+      socketInstance.disconnect();
     }
   }
 }

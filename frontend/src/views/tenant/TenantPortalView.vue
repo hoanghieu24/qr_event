@@ -5,6 +5,7 @@ import { Html5Qrcode } from 'html5-qrcode';
 import api from '../../api/client';
 import { useAuthStore } from '../../stores/auth';
 import { isTenantMode, isAdminMode } from '../../utils/portalMode';
+import { navigateWithFallback, performLogoutAndRedirect } from '../../utils/authSession';
 import InviteCardModal from '../../components/InviteCardModal.vue';
 import {
   Activity,
@@ -62,8 +63,8 @@ import './tenant-style.css';
 const router = useRouter();
 const authStore = useAuthStore();
 
-const token = ref(localStorage.getItem('tenant_token') || localStorage.getItem('token') || '');
-const user = ref<any>(JSON.parse(localStorage.getItem('tenant_user') || localStorage.getItem('user') || 'null'));
+const token = ref(authStore.token || localStorage.getItem('token') || '');
+const user = ref<any>(authStore.user || null);
 const email = ref('');
 const password = ref('');
 const loginBusy = ref(false);
@@ -514,7 +515,7 @@ const loadPortal = async () => {
     await loadDisputes();
   } catch (error: any) {
     errorMessage.value = explainError(error);
-    if (error.response?.status === 401 || error.response?.status === 403) logout();
+    if (error.response?.status === 401) await logout();
   } finally {
     loading.value = false;
   }
@@ -899,18 +900,16 @@ const registerTenantAccount = async () => {
   }
 };
 
-const logout = () => {
+const logout = async () => {
   stopScanner();
   token.value = '';
   user.value = null;
-  authStore.logout();
   events.value = [];
   selectedEvent.value = null;
   staffEvents.value = [];
   staffInviteLink.value = null;
   staffRegistrations.value = [];
-  authStore.logout();
-  router.push('/khach');
+  await performLogoutAndRedirect(router, authStore, '/khach');
 };
 
 const loadStaffPortal = async () => {
@@ -1872,6 +1871,17 @@ const exportAttendees = () => {
   URL.revokeObjectURL(url);
 };
 
+watch(
+  [() => authStore.token, () => authStore.user],
+  ([nextToken, nextUser]) => {
+    token.value = nextToken || '';
+    user.value = nextUser || null;
+    if (!nextToken) {
+      stopScanner();
+    }
+  }
+);
+
 onMounted(async () => {
   // If user is already logged in as TENANT_ADMIN or staff, load immediately
   if (user.value && (user.value.type === 'TENANT_ADMIN' || user.value.type === 'STAFF')) {
@@ -1882,7 +1892,7 @@ onMounted(async () => {
     }
   } else {
     // Nếu chưa đăng nhập hoặc không phải ban tổ chức -> chuyển về trang khách
-    router.replace('/khach');
+    await navigateWithFallback(router, '/khach', true);
   }
 });
 

@@ -120,6 +120,12 @@
   .btn-danger-soft {
     @apply btn border border-rose-200 bg-rose-50 text-rose-700 hover:bg-rose-100;
   }
+  .btn-danger {
+    @apply btn bg-rose-600 text-white shadow-xs hover:bg-rose-700;
+  }
+  .btn-xs {
+    @apply min-h-8 rounded-lg px-2.5 py-1 text-xs;
+  }
 
   /* Forms */
   .field-label {
@@ -145,21 +151,25 @@
 
   /* Chips & badges */
   .chip {
-    @apply inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-semibold ring-1 ring-inset;
+    @apply inline-flex shrink-0 whitespace-nowrap items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-semibold ring-1 ring-inset;
   }
-  .chip-gray {
+  .chip-gray,
+  .chip-slate {
     @apply chip bg-slate-50 text-slate-600 ring-slate-200;
   }
-  .chip-brand {
+  .chip-brand,
+  .chip-primary {
     @apply chip bg-primary-50 text-primary-700 ring-primary-200;
   }
-  .chip-green {
+  .chip-green,
+  .chip-success {
     @apply chip bg-emerald-50 text-emerald-700 ring-emerald-200;
   }
   .chip-amber {
     @apply chip bg-amber-50 text-amber-700 ring-amber-200;
   }
-  .chip-red {
+  .chip-red,
+  .chip-danger {
     @apply chip bg-rose-50 text-rose-700 ring-rose-200;
   }
 

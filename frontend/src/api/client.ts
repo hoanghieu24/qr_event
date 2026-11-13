@@ -67,6 +67,14 @@ const api = axios.create({
   },
 });
 
+type UnauthorizedContext = { url: string; hadToken: boolean };
+let unauthorizedHandler: ((ctx: UnauthorizedContext) => void) | null = null;
+
+/** Register a global callback invoked when HTTP 401 invalidates an active session. */
+export function setUnauthorizedHandler(handler: ((ctx: UnauthorizedContext) => void) | null): void {
+  unauthorizedHandler = handler;
+}
+
 // Attach Authorization header if token exists and track slow wake-ups
 api.interceptors.request.use((config) => {
   const cfg = config as RetryableRequestConfig;
@@ -103,10 +111,20 @@ api.interceptors.response.use(
 
     endTrackRequest();
     if (status === 401) {
-      // Clear token if expired or unauthorized
-      if (!window.location.pathname.startsWith('/invite/')) {
-        localStorage.removeItem('token');
-        localStorage.removeItem('user');
+      const requestUrl = String(cfg?.url || '');
+      const isAuthSubmission =
+        /\/auth\/(login|verify-otp|send-otp)|\/tenants\/register/.test(requestUrl);
+      const hadToken = Boolean(cfg?.headers?.Authorization || localStorage.getItem('token'));
+
+      if (!isAuthSubmission) {
+        if (unauthorizedHandler) {
+          unauthorizedHandler({ url: requestUrl, hadToken });
+        } else {
+          localStorage.removeItem('token');
+          localStorage.removeItem('user');
+          localStorage.removeItem('tenant_token');
+          localStorage.removeItem('tenant_user');
+        }
       }
     }
     return Promise.reject(error);

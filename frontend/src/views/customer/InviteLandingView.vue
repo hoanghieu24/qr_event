@@ -277,11 +277,8 @@ const handleSubmitRegistration = async () => {
   try {
     const activeToken = inviteData.value?.token || token;
     const res = await api.post('/registrations', { token: activeToken, ...form.value });
-    if (res.data?.data?.token) {
-      auth.token = res.data.data.token;
-      auth.user = res.data.data.user;
-      localStorage.setItem('token', res.data.data.token);
-      localStorage.setItem('user', JSON.stringify(res.data.data.user));
+    if (res.data?.data?.token && res.data?.data?.user) {
+      auth.setSession(res.data.data.token, res.data.data.user);
     }
     registrationDone.value = true;
     window.scrollTo({ top: 0, behavior: 'smooth' });

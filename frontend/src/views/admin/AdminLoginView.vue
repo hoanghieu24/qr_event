@@ -15,6 +15,7 @@ import {
   QrCode
 } from 'lucide-vue-next';
 import { useAuthStore } from '../../stores/auth';
+import { navigateWithFallback, sanitizeRedirectPath } from '../../utils/authSession';
 
 const router = useRouter();
 const route = useRoute();
@@ -47,8 +48,9 @@ const handleAdminLogin = async () => {
       return;
     }
 
-    const redirect = (route.query.redirect as string) || '/admin';
-    router.push(redirect);
+    const safeRedirect = sanitizeRedirectPath(route.query.redirect, '/admin');
+    const target = safeRedirect.startsWith('/admin') ? safeRedirect : '/admin';
+    await navigateWithFallback(router, target, true);
   } catch (err: any) {
     errorMessage.value = err.response?.data?.message || err.message || 'Đăng nhập Quản trị viên thất bại.';
   } finally {

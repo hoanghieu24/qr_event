@@ -19,6 +19,7 @@ import {
 } from 'lucide-vue-next';
 import { useAuthStore } from '../stores/auth';
 import api from '../api/client';
+import { navigateWithFallback as navigateWithRouterFallback, sanitizeRedirectPath } from '../utils/authSession';
 
 const router = useRouter();
 const route = useRoute();
@@ -66,16 +67,7 @@ const customerMessage = ref('');
 const tenantLoginSuccess = ref('');
 const tenantRegRedirecting = ref(false);
 
-const navigateWithFallback = async (target: string) => {
-  try {
-    const failure = await router.replace(target);
-    if (failure) {
-      window.location.assign(target);
-    }
-  } catch {
-    window.location.assign(target);
-  }
-};
+const navigateWithFallback = (target: string) => navigateWithRouterFallback(router, target, true);
 
 // Xử lý đăng ký Ban tổ chức / Khách thuê
 const handleTenantRegister = async () => {
@@ -134,9 +126,9 @@ const handleTenantLogin = async () => {
   }
   try {
     const user = await auth.loginWithPassword(email, password);
-    const redirectQuery = route.query.redirect as string;
+    const safeRedirect = sanitizeRedirectPath(route.query.redirect, '/tenant');
     if (user?.type === 'TENANT_ADMIN' || user?.type === 'STAFF') {
-      await navigateWithFallback(redirectQuery || '/tenant');
+      await navigateWithFallback(safeRedirect.startsWith('/admin') ? '/tenant' : safeRedirect);
       return;
     }
     if (user?.type === 'ADMIN') {
@@ -162,7 +154,7 @@ const handleSendOtp = async () => {
       // Người tham gia đã từng có tài khoản -> Không cần nhập mã OTP!
       customerMessage.value = data.message || 'Đã nhận diện vé của bạn! Đang mở mã QR...';
       setTimeout(() => {
-        router.push('/my-ticket');
+        void navigateWithFallback('/my-ticket');
       }, 400);
       return;
     }
@@ -186,7 +178,8 @@ const handleVerifyOtp = async () => {
   customerError.value = '';
   try {
     await auth.verifyOtp(customerEmail.value, otpCode.value, customerName.value, customerPhone.value);
-    router.push((route.query.redirect as string) || '/my-ticket');
+    const safeRedirect = sanitizeRedirectPath(route.query.redirect, '/my-ticket');
+    await navigateWithFallback(safeRedirect.startsWith('/admin') ? '/my-ticket' : safeRedirect);
   } catch (err: any) {
     customerError.value = err.response?.data?.message || err.message || 'Mã xác thực không hợp lệ hoặc đã hết hạn.';
   }
