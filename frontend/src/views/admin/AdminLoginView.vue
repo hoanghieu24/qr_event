@@ -79,7 +79,7 @@ const handleAdminLogin = async () => {
         </div>
 
         <div class="flex items-center justify-center gap-3">
-          <img src="/logo-white.png" alt="EventGo.vn" class="h-11 w-auto object-contain" />
+          <img src="/logo-white.png" alt="EventGo" class="h-11 w-auto object-contain" />
           <span class="text-[10px] font-bold bg-rose-500/20 text-rose-300 border border-rose-500/30 px-2.5 py-1 rounded-lg">ADMIN</span>
         </div>
       </div>
@@ -167,7 +167,7 @@ const handleAdminLogin = async () => {
             <Server class="h-3.5 w-3.5 text-slate-600" />
             Bảo mật SSL 256-bit
           </span>
-          <span>© 2026 EventGo.vn Admin</span>
+          <span>© 2026 EventGo Admin</span>
         </div>
       </div>
     </div>

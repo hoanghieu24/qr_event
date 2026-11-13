@@ -183,7 +183,7 @@ const onOtpInput = (e: Event) => {
       </div>
 
       <div class="relative flex items-center gap-3">
-        <img src="/logo-white.png" alt="EventGo.vn" class="h-11 w-auto object-contain" />
+        <img src="/logo-white.png" alt="EventGo" class="h-11 w-auto object-contain" />
       </div>
 
       <div class="relative max-w-md">
@@ -210,7 +210,7 @@ const onOtpInput = (e: Event) => {
         </ul>
       </div>
 
-      <div class="relative text-xs text-primary-200/60">© 2026 EventGo.vn Platform · All Rights Reserved</div>
+      <div class="relative text-xs text-primary-200/60">© 2026 EventGo Platform · All Rights Reserved</div>
     </aside>
 
     <!-- Right Interaction Panel -->
@@ -219,7 +219,7 @@ const onOtpInput = (e: Event) => {
       <div class="pt-safe relative overflow-hidden bg-primary-950 px-5 pb-8 pt-7 text-white lg:hidden">
         <div class="pointer-events-none absolute -right-16 -top-16 h-56 w-56 rounded-full bg-primary-600/50 blur-3xl" />
         <div class="relative flex items-center gap-2.5">
-          <img src="/logo-white.png" alt="EventGo.vn" class="h-9 w-auto object-contain" />
+          <img src="/logo-white.png" alt="EventGo" class="h-9 w-auto object-contain" />
         </div>
         <h1 class="relative mt-3 text-2xl font-extrabold tracking-tight">Chào mừng bạn 👋</h1>
         <p class="relative mt-1 text-xs text-primary-100/80">Tra cứu vé sự kiện hoặc tạo sự kiện riêng</p>

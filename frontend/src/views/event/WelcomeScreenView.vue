@@ -228,7 +228,7 @@ onUnmounted(() => {
     <header class="relative z-20 px-6 py-4 flex items-center justify-between border-b border-slate-800/80 bg-slate-900/50 backdrop-blur-md">
       <!-- Left: Logo & Event Title -->
       <div class="flex items-center gap-4">
-        <img src="/logo-white.png" alt="EventGo.vn" class="h-9 w-auto object-contain" />
+        <img src="/logo-white.png" alt="EventGo" class="h-9 w-auto object-contain" />
         <div>
           <span class="text-[10px] uppercase tracking-widest text-primary-400 font-extrabold flex items-center gap-1.5">
             <Sparkles class="w-3 h-3 text-amber-400" />
@@ -521,7 +521,7 @@ onUnmounted(() => {
     <!-- FOOTER STATUS -->
     <footer class="relative z-10 px-6 py-3 border-t border-slate-800/60 bg-slate-950/80 text-center text-[11px] text-slate-500 flex flex-col sm:flex-row items-center justify-between gap-2">
       <div>
-        Hệ thống Check-in QR Thông Minh & Màn Hình Sân Khấu EventGo.vn
+        Hệ thống Check-in QR Thông Minh & Màn Hình Sân Khấu EventGo
       </div>
       <div class="flex items-center gap-3">
         <span>Địa điểm: <strong class="text-slate-400">{{ eventData?.location || 'Hội trường sự kiện' }}</strong></span>

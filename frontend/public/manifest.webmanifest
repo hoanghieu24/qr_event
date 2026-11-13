@@ -1,7 +1,7 @@
 {
-  "name": "EventGo.vn · Quản lý sự kiện & Check-in",
-  "short_name": "EventGo.vn",
-  "description": "Nền tảng phát hành vé và check-in sự kiện bảo mật qua mã QR EventGo.vn",
+  "name": "EventGo · Quản lý sự kiện & Check-in",
+  "short_name": "EventGo",
+  "description": "Nền tảng phát hành vé và check-in sự kiện bảo mật qua mã QR EventGo",
   "start_url": "/",
   "display": "standalone",
   "orientation": "portrait",

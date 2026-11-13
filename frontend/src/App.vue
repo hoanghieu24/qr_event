@@ -70,7 +70,7 @@ watch(() => route.fullPath, () => (menuOpen.value = false));
     <header class="pt-safe sticky top-0 z-40 border-b border-slate-200/70 bg-white/80 backdrop-blur-xl">
       <div class="mx-auto flex h-14 max-w-6xl items-center gap-4 px-4 sm:h-16 sm:px-6 lg:px-8">
         <router-link to="/" class="flex items-center gap-2.5">
-          <img src="/logo-transparent.png" alt="EventGo.vn" class="h-8 sm:h-9 w-auto object-contain" />
+          <img src="/logo-transparent.png" alt="EventGo" class="h-8 sm:h-9 w-auto object-contain" />
         </router-link>
 
         <!-- Desktop nav -->

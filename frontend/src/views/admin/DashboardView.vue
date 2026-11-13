@@ -112,7 +112,7 @@ const systemSettings = ref<{
   smtp_port: '587',
   smtp_user: '',
   smtp_pass: '',
-  smtp_from_name: 'EventGo.vn',
+  smtp_from_name: 'EventGo',
   email_on_approved: '1',
   notify_hours_before: '24',
   geofence_default_radius: '500',
@@ -1354,7 +1354,7 @@ const formatOtpTime = (dateStr: string) => {
             Master Console
           </span>
           <span class="text-xs text-slate-400 font-mono">
-            EventGo.vn Enterprise
+            EventGo Enterprise
           </span>
         </div>
         <h1 class="text-xl sm:text-2xl font-black text-slate-900 tracking-tight mt-1">
@@ -2936,7 +2936,7 @@ const formatOtpTime = (dateStr: string) => {
               <label class="block font-bold text-slate-700 mb-1">Tên người gửi hiển thị (From Name)</label>
               <input
                 v-model="systemSettings.smtp_from_name"
-                placeholder="EventGo.vn Event Desk"
+                placeholder="EventGo Event Desk"
                 class="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs focus:bg-white focus:outline-none focus:ring-2 focus:ring-primary-500"
               />
             </div>

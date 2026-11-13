@@ -192,7 +192,7 @@ router.post('/settings/test-email', authenticate, requireAdmin, async (req: Requ
     const port = Number(smtp_port) || savedConfig.port || 587;
     const user = (smtp_user || savedConfig.user || '').trim();
     const pass = (smtp_pass || savedConfig.pass || '').trim();
-    const fromName = (smtp_from_name || smtp_sender_name || savedConfig.fromName || 'EventGo.vn').trim();
+    const fromName = (smtp_from_name || smtp_sender_name || savedConfig.fromName || 'EventGo').trim();
     const recipient = (target_email || req.user?.email || user || 'admin@eventqr.com').trim();
 
     if (!user || !pass) {
@@ -213,11 +213,11 @@ router.post('/settings/test-email', authenticate, requireAdmin, async (req: Requ
       },
       {
         to: recipient,
-        subject: '🧪 [EventGo.vn] Thử nghiệm cấu hình SMTP Email thành công!',
+        subject: '🧪 [EventGo] Thử nghiệm cấu hình SMTP Email thành công!',
         html: `
           <div style="font-family: sans-serif; padding: 20px; color: #1e293b;">
             <h2 style="color: #4f46e5;">Cấu hình SMTP của bạn hoạt động hoàn hảo!</h2>
-            <p>Email này được gửi thử nghiệm từ trang quản trị hệ thống <strong>EventGo.vn Check-in</strong>.</p>
+            <p>Email này được gửi thử nghiệm từ trang quản trị hệ thống <strong>EventGo Check-in</strong>.</p>
             <hr style="border: 0; border-top: 1px solid #e2e8f0; margin: 15px 0;">
             <p style="font-size: 12px; color: #64748b;">Thời gian kiểm tra: ${new Date().toLocaleString('vi-VN', { timeZone: 'Asia/Ho_Chi_Minh' })}</p>
           </div>

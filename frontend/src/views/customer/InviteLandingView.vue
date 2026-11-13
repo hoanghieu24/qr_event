@@ -358,7 +358,7 @@ const handleSubmitRegistration = async () => {
               <div class="absolute inset-0 bg-gradient-to-t from-slate-950/85 via-slate-950/20 to-slate-950/10" />
               <div class="pt-safe absolute inset-x-0 top-0 flex items-center justify-between p-4">
                 <span class="inline-flex items-center gap-1.5 rounded-full bg-white/20 px-3 py-1 text-xs font-semibold text-white ring-1 ring-white/30 backdrop-blur-md">
-                  <img src="/icon.png" alt="EventGo.vn" class="h-4 w-4 rounded-sm object-contain" /> EventGo.vn
+                  <img src="/icon.png" alt="EventGo" class="h-4 w-4 rounded-sm object-contain" /> EventGo
                 </span>
                 <span class="inline-flex items-center gap-1.5 rounded-full bg-emerald-500/90 px-3 py-1.5 text-xs font-semibold text-white backdrop-blur-md">
                   <ShieldCheck class="h-3.5 w-3.5" /> Thư mời chính thức

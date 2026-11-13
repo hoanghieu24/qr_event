@@ -80,7 +80,7 @@ export class RegistrationsService {
         <div style="font-family: 'Segoe UI', Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 26px; border: 1px solid #cbd5e1; border-radius: 16px; background-color: #ffffff; color: #0f172a;">
           <div style="text-align: center; margin-bottom: 16px;">
             <span style="display: inline-block; background-color: #ecfdf5; color: #047857; font-weight: 700; font-size: 12px; padding: 6px 14px; border-radius: 999px; letter-spacing: 0.5px;">
-              VÉ THAM DỰ SỰ KIỆN EVENTGO.VN HỢP LỆ
+              VÉ THAM DỰ SỰ KIỆN EVENTGO HỢP LỆ
             </span>
           </div>
           <h2 style="color: #0284c7; text-align: center; margin: 0 0 14px 0; font-size: 22px;">${safeEventName}</h2>
@@ -119,7 +119,7 @@ export class RegistrationsService {
 
       return await sendEmailWithResult({
         to: params.to,
-        subject: `[EventGo.vn] Vé QR tham dự sự kiện: ${params.eventName}`,
+        subject: `[EventGo] Vé QR tham dự sự kiện: ${params.eventName}`,
         html,
         attachments: [
           {
@@ -442,7 +442,7 @@ export class RegistrationsService {
     if (txResult.referrer?.email) {
       await sendEmail({
         to: txResult.referrer.email,
-        subject: `[EventGo.vn] Có lượt đăng ký mới từ khách hàng ${data.full_name}`,
+        subject: `[EventGo] Có lượt đăng ký mới từ khách hàng ${data.full_name}`,
         html: `
           <div style="font-family: Arial, sans-serif; padding: 20px;">
             <h3>Có lượt đăng ký mới cần duyệt!</h3>
@@ -577,7 +577,7 @@ export class RegistrationsService {
       // Notify customer that referrer approved, waiting for Admin
       await sendEmail({
         to: reg.email,
-        subject: `[EventGo.vn] Đăng ký của bạn đã qua vòng 1: ${reg.event_name}`,
+        subject: `[EventGo] Đăng ký của bạn đã qua vòng 1: ${reg.event_name}`,
         html: `
           <div style="font-family: Arial, sans-serif; padding: 20px;">
             <p>Chào <strong>${reg.full_name}</strong>,</p>

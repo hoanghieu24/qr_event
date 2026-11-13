@@ -138,7 +138,7 @@ export async function getEffectiveSmtpConfig(): Promise<SmtpConfig> {
   if (dbHasCredentials) {
     const port = Number(dbSettings.smtp_port) || 587;
     const user = dbSettings.smtp_user.trim();
-    const fromName = (dbSettings.smtp_from_name || dbSettings.smtp_sender_name || ENV.SMTP_FROM_NAME || 'EventGo.vn').trim();
+    const fromName = (dbSettings.smtp_from_name || dbSettings.smtp_sender_name || ENV.SMTP_FROM_NAME || 'EventGo').trim();
     const rawFromEmail = (dbSettings.smtp_from_email || '').trim();
     const fromEmail =
       rawFromEmail && !PLACEHOLDER_USERS.has(rawFromEmail.toLowerCase()) ? rawFromEmail : user;
@@ -170,7 +170,7 @@ export async function getEffectiveSmtpConfig(): Promise<SmtpConfig> {
       secure: ENV.SMTP_SECURE || port === 465,
       user,
       pass: ENV.SMTP_PASS.trim(),
-      fromName: ENV.SMTP_FROM_NAME || 'EventGo.vn',
+      fromName: ENV.SMTP_FROM_NAME || 'EventGo',
       fromEmail,
       emailOnApproved,
       relayUrl,
@@ -184,7 +184,7 @@ export async function getEffectiveSmtpConfig(): Promise<SmtpConfig> {
     secure: ENV.SMTP_SECURE,
     user: ENV.SMTP_USER,
     pass: ENV.SMTP_PASS,
-    fromName: ENV.SMTP_FROM_NAME || 'EventGo.vn',
+    fromName: ENV.SMTP_FROM_NAME || 'EventGo',
     fromEmail: ENV.SMTP_FROM_EMAIL || 'no-reply@eventqr.com',
     emailOnApproved,
     relayUrl,

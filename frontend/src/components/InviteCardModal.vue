@@ -1414,7 +1414,7 @@ const generateCard = async () => {
 
   ctx.fillStyle = textMuted;
   ctx.font = '400 20px "Be Vietnam Pro", sans-serif';
-  ctx.fillText('HỆ THỐNG QUẢN LÝ CHECK-IN SỰ KIỆN EVENTGO.VN • VIP GALA PASS', width / 2, 1740);
+  ctx.fillText('HỆ THỐNG QUẢN LÝ CHECK-IN SỰ KIỆN EVENTGO • VIP GALA PASS', width / 2, 1740);
 
   previewDataUrl.value = canvas.toDataURL('image/png');
 };
