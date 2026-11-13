@@ -53,114 +53,125 @@ async function autoInitDatabaseIfEmpty() {
   }
 }
 
-async function bootstrap() {
+async function ensureColumnExists(
+  conn: any,
+  existingCols: Set<string>,
+  tableName: string,
+  columnName: string,
+  alterSql: string
+) {
+  if (existingCols.has(`${tableName}.${columnName}`)) return;
+  await conn.query(alterSql);
+}
+
+async function runStartupMaintenance() {
+  let conn: any = null;
   try {
-    // Test database connection
-    const connection = await pool.getConnection();
-    console.log(`✅ Kết nối cơ sở dữ liệu MySQL thành công (${ENV.DB_HOST}:${ENV.DB_PORT}/${ENV.DB_NAME})`);
-    connection.release();
+    conn = await pool.getConnection();
 
-    // Auto-check and initialize tables if empty (e.g. freshly created Aiven DB)
-    await autoInitDatabaseIfEmpty();
+    // Check legacy columns in 1 query instead of throwing 4 ALTER TABLE errors per boot
+    const [colRows]: any = await conn.query(`
+      SELECT TABLE_NAME, COLUMN_NAME
+      FROM INFORMATION_SCHEMA.COLUMNS
+      WHERE TABLE_SCHEMA = DATABASE()
+        AND (
+          (TABLE_NAME = 'invite_links' AND COLUMN_NAME = 'legacy_token')
+          OR (TABLE_NAME = 'events' AND COLUMN_NAME IN ('registration_deadline', 'map_url', 'info_url'))
+        )
+    `);
+    const existingCols = new Set<string>(
+      (Array.isArray(colRows) ? colRows : []).map((r: any) => `${r.TABLE_NAME}.${r.COLUMN_NAME}`)
+    );
 
-    // Nâng hạn mức nhân sự và soát vé cho các sự kiện thử nghiệm để thuận tiện test
-    try {
-      const conn = await pool.getConnection();
-      await conn.query(`
-        UPDATE events 
-        SET max_scanners = GREATEST(max_scanners, 10), 
-            max_referrers = GREATEST(max_referrers, 10), 
-            max_employees = GREATEST(max_employees, 20)
-        WHERE is_trial = 1 OR max_scanners < 10
-      `);
+    await ensureColumnExists(conn, existingCols, 'invite_links', 'legacy_token', `ALTER TABLE invite_links ADD COLUMN legacy_token VARCHAR(255) NULL AFTER token`);
+    await ensureColumnExists(conn, existingCols, 'events', 'registration_deadline', `ALTER TABLE events ADD COLUMN registration_deadline DATETIME NULL AFTER end_at`);
+    await ensureColumnExists(conn, existingCols, 'events', 'map_url', `ALTER TABLE events ADD COLUMN map_url VARCHAR(500) NULL AFTER location`);
+    await ensureColumnExists(conn, existingCols, 'events', 'info_url', `ALTER TABLE events ADD COLUMN info_url VARCHAR(500) NULL AFTER description`);
 
-      // Tự động đảm bảo cột legacy_token và rút ngắn toàn bộ link mời cũ
-      try {
-        await conn.query(`ALTER TABLE invite_links ADD COLUMN legacy_token VARCHAR(255) NULL AFTER token`);
-      } catch (colErr: any) {
-        // Cột đã tồn tại
+    await conn.query(`
+      UPDATE events
+      SET max_scanners = GREATEST(max_scanners, 10),
+          max_referrers = GREATEST(max_referrers, 10),
+          max_employees = GREATEST(max_employees, 20)
+      WHERE (is_trial = 1 AND (max_scanners < 10 OR max_referrers < 10 OR max_employees < 20))
+         OR max_scanners < 10
+    `);
+
+    const [longLinks]: any = await conn.query(`
+      SELECT id, event_id, referrer_id, token
+      FROM invite_links
+      WHERE (LENGTH(token) > 12 OR token LIKE 'inv_%') AND status = 'ACTIVE'
+    `);
+    if (Array.isArray(longLinks) && longLinks.length > 0) {
+      for (const l of longLinks) {
+        const shortToken = await InvitesService.generateUniqueShortToken();
+        const newSig = InvitesService.generateSignature(l.event_id, l.referrer_id, shortToken);
+        await conn.query(
+          `UPDATE invite_links SET legacy_token = COALESCE(legacy_token, token), token = ?, signature = ? WHERE id = ?`,
+          [shortToken, newSig, l.id]
+        );
       }
-
-      // Tự động đảm bảo các cột registration_deadline, map_url, info_url trong bảng events
-      try {
-        await conn.query(`ALTER TABLE events ADD COLUMN registration_deadline DATETIME NULL AFTER end_at`);
-      } catch (_) {}
-      try {
-        await conn.query(`ALTER TABLE events ADD COLUMN map_url VARCHAR(500) NULL AFTER location`);
-      } catch (_) {}
-      try {
-        await conn.query(`ALTER TABLE events ADD COLUMN info_url VARCHAR(500) NULL AFTER description`);
-      } catch (_) {}
-
-      const [longLinks]: any = await conn.query(`
-        SELECT id, event_id, referrer_id, token 
-        FROM invite_links 
-        WHERE (LENGTH(token) > 12 OR token LIKE 'inv_%') AND status = 'ACTIVE'
-      `);
-
-      if (Array.isArray(longLinks) && longLinks.length > 0) {
-        for (const l of longLinks) {
-          const shortToken = await InvitesService.generateUniqueShortToken();
-          const newSig = InvitesService.generateSignature(l.event_id, l.referrer_id, shortToken);
-          await conn.query(
-            `UPDATE invite_links SET legacy_token = COALESCE(legacy_token, token), token = ?, signature = ? WHERE id = ?`,
-            [shortToken, newSig, l.id]
-          );
-        }
-        console.log(`✅ Đã tự động rút gọn ${longLinks.length} link mời cũ sang dạng ngắn (8 ký tự).`);
-      }
-
-      // Đảm bảo mọi sự kiện PUBLISHED đều có ít nhất 1 link mời ACTIVE
-      const [eventsWithoutInvites]: any = await conn.query(`
-        SELECT e.id, e.created_by 
-        FROM events e 
-        WHERE e.status = 'PUBLISHED' 
-          AND NOT EXISTS (SELECT 1 FROM invite_links il WHERE il.event_id = e.id AND il.status = 'ACTIVE')
-      `);
-      if (Array.isArray(eventsWithoutInvites) && eventsWithoutInvites.length > 0) {
-        for (const ev of eventsWithoutInvites) {
-          const shortToken = await InvitesService.generateUniqueShortToken();
-          const refId = ev.created_by || 1;
-          const newSig = InvitesService.generateSignature(ev.id, refId, shortToken);
-          const expiresAt = new Date(Date.now() + 60 * 24 * 60 * 60 * 1000);
-          await conn.query(`
-            INSERT INTO invite_links (event_id, referrer_id, token, signature, expires_at, max_registrations, status)
-            VALUES (?, ?, ?, ?, ?, 1000, 'ACTIVE')
-          `, [ev.id, refId, shortToken, newSig, expiresAt]);
-        }
-        console.log(`✅ Đã tự động tạo link mời chính thức cho ${eventsWithoutInvites.length} sự kiện đang hoạt động.`);
-      }
-
-      // Đảm bảo tất cả người mời (can_invite = 1) đều có quyền duyệt khách (can_approve = 1)
-      try {
-        await conn.query(`UPDATE staff_event_quotas SET can_approve = 1 WHERE can_invite = 1`);
-        await conn.query(`
-          INSERT IGNORE INTO user_permissions (user_id, permission_id)
-          SELECT DISTINCT seq.staff_id, p.id
-          FROM staff_event_quotas seq
-          JOIN permissions p ON p.code = 'registrations:approve'
-          WHERE seq.can_invite = 1 AND seq.is_enabled = 1
-        `);
-        console.log('✅ Đã cập nhật quyền duyệt khách cho toàn bộ nhân sự người mời.');
-      } catch (apErr: any) {
-        console.warn('⚠️ Cập nhật quyền duyệt khách thất bại:', apErr.message);
-      }
-
-      conn.release();
-      console.log('✅ Đã cập nhật hạn mức nhân sự/soát vé tối thiểu 10 cho các sự kiện.');
-    } catch (e: any) {
-      console.warn('⚠️ Cập nhật hạn mức hoặc rút ngắn link thất bại:', e.message);
+      console.log(`✅ Đã tự động rút gọn ${longLinks.length} link mời cũ sang dạng ngắn (8 ký tự).`);
     }
 
+    const [eventsWithoutInvites]: any = await conn.query(`
+      SELECT e.id, e.created_by
+      FROM events e
+      WHERE e.status = 'PUBLISHED'
+        AND NOT EXISTS (SELECT 1 FROM invite_links il WHERE il.event_id = e.id AND il.status = 'ACTIVE')
+    `);
+    if (Array.isArray(eventsWithoutInvites) && eventsWithoutInvites.length > 0) {
+      for (const ev of eventsWithoutInvites) {
+        const shortToken = await InvitesService.generateUniqueShortToken();
+        const refId = ev.created_by || 1;
+        const newSig = InvitesService.generateSignature(ev.id, refId, shortToken);
+        const expiresAt = new Date(Date.now() + 60 * 24 * 60 * 60 * 1000);
+        await conn.query(
+          `INSERT INTO invite_links (event_id, referrer_id, token, signature, expires_at, max_registrations, status)
+           VALUES (?, ?, ?, ?, ?, 1000, 'ACTIVE')`,
+          [ev.id, refId, shortToken, newSig, expiresAt]
+        );
+      }
+      console.log(`✅ Đã tự động tạo link mời chính thức cho ${eventsWithoutInvites.length} sự kiện đang hoạt động.`);
+    }
+
+    await conn.query(`UPDATE staff_event_quotas SET can_approve = 1 WHERE can_invite = 1 AND (can_approve IS NULL OR can_approve = 0)`);
+    await conn.query(`
+      INSERT IGNORE INTO user_permissions (user_id, permission_id)
+      SELECT DISTINCT seq.staff_id, p.id
+      FROM staff_event_quotas seq
+      JOIN permissions p ON p.code = 'registrations:approve'
+      WHERE seq.can_invite = 1 AND seq.is_enabled = 1
+    `);
+  } catch (e: any) {
+    console.warn('⚠️ Startup maintenance warning:', e.message);
+  } finally {
+    if (conn) conn.release();
+  }
+}
+
+async function bootstrap() {
+  try {
     const httpServer = http.createServer(app);
     initSocketServer(httpServer);
 
+    httpServer.on('error', (error) => {
+      console.error('❌ Lỗi máy chủ HTTP:', error);
+      process.exit(1);
+    });
+
+    // Bind port immediately so Render health check succeeds without waiting on remote DB round-trips
     httpServer.listen(ENV.PORT, '0.0.0.0', () => {
       console.log(`🚀 Máy chủ Backend Event-QR đang chạy tại: http://localhost:${ENV.PORT}`);
       console.log(`📡 Chế độ môi trường: ${ENV.NODE_ENV}`);
       console.log(`📧 Cấu hình SMTP: ${ENV.SMTP_HOST}:${ENV.SMTP_PORT}`);
       console.log(`⚡ WebSocket / Socket.IO Realtime Server đã khởi động thành công!`);
     });
+
+    // Connect and auto-init database concurrently; run non-critical maintenance afterwards
+    await autoInitDatabaseIfEmpty();
+    console.log(`✅ Kết nối cơ sở dữ liệu MySQL thành công (${ENV.DB_HOST}:${ENV.DB_PORT}/${ENV.DB_NAME})`);
+    void runStartupMaintenance();
   } catch (error) {
     console.error('❌ Không thể khởi động máy chủ:', error);
     process.exit(1);

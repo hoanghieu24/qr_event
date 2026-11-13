@@ -83,9 +83,14 @@ export const useAuthStore = defineStore('auth', {
         this.user = res.data.data;
         localStorage.setItem('user', JSON.stringify(this.user));
         return this.user;
-      } catch (e) {
-        this.logout();
-        return null;
+      } catch (e: any) {
+        const status = e?.response?.status;
+        // Only log out on real auth rejection, not transient Render cold-start 502/503/network errors
+        if (status === 401 || status === 403) {
+          this.logout();
+          return null;
+        }
+        return this.user;
       }
     },
 

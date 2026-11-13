@@ -1,33 +1,32 @@
 import mysql from 'mysql2/promise';
 import { ENV } from './env';
 
+const sharedPoolConfig: mysql.PoolOptions = {
+  waitForConnections: true,
+  connectionLimit: 15,
+  queueLimit: 0,
+  enableKeepAlive: true,
+  keepAliveInitialDelay: 0,
+  connectTimeout: 15000,
+  multipleStatements: true,
+  timezone: '+07:00',
+};
+
 export const pool = mysql.createPool(
   ENV.DATABASE_URL
     ? {
+        ...sharedPoolConfig,
         uri: ENV.DATABASE_URL,
         ssl: { rejectUnauthorized: false },
-        waitForConnections: true,
-        connectionLimit: 15,
-        queueLimit: 0,
-        enableKeepAlive: true,
-        keepAliveInitialDelay: 0,
-        multipleStatements: true,
-        timezone: '+07:00',
       }
     : {
+        ...sharedPoolConfig,
         host: ENV.DB_HOST,
         port: ENV.DB_PORT,
         user: ENV.DB_USER,
         password: ENV.DB_PASSWORD,
         database: ENV.DB_NAME,
         ssl: ENV.DB_SSL ? { rejectUnauthorized: false } : undefined,
-        waitForConnections: true,
-        connectionLimit: 15,
-        queueLimit: 0,
-        enableKeepAlive: true,
-        keepAliveInitialDelay: 0,
-        multipleStatements: true,
-        timezone: '+07:00',
       }
 );
 

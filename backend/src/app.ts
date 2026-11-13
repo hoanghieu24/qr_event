@@ -34,13 +34,18 @@ app.use(
 app.use(express.json({ limit: '15mb' }));
 app.use(express.urlencoded({ extended: true, limit: '15mb' }));
 
+// Lightweight health checks (bypass API rate limiter & DB)
+const healthHandler = (_req: express.Request, res: express.Response) => {
+  res.set('Cache-Control', 'no-store');
+  res.json({ status: 'ok', timestamp: new Date().toISOString() });
+};
+
+app.get('/', healthHandler);
+app.get('/health', healthHandler);
+app.get('/api/v1/health', healthHandler);
+
 // Global rate limiting
 app.use('/api', apiLimiter);
-
-// Health check endpoint
-app.get('/health', (req, res) => {
-  res.json({ status: 'ok', timestamp: new Date().toISOString() });
-});
 
 // Auto Init DB endpoint for deployment bootstrap
 app.get('/api/v1/init-db', async (req, res) => {

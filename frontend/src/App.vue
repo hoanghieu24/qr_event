@@ -1,8 +1,9 @@
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue';
 import { useRouter, useRoute } from 'vue-router';
-import { ScanLine, Users, ShieldAlert, LayoutDashboard, Ticket, LogOut, QrCode, ChevronDown } from 'lucide-vue-next';
+import { ScanLine, Users, ShieldAlert, LayoutDashboard, Ticket, LogOut, QrCode, ChevronDown, Loader2 } from 'lucide-vue-next';
 import { useAuthStore } from './stores/auth';
+import { backendWarmState } from './api/client';
 
 const router = useRouter();
 const route = useRoute();
@@ -165,4 +166,21 @@ watch(() => route.fullPath, () => (menuOpen.value = false));
       <div class="h-1.5" />
     </nav>
   </div>
+
+  <Transition
+    enter-active-class="transition duration-200 ease-out"
+    enter-from-class="opacity-0 translate-y-2"
+    leave-active-class="transition duration-150 ease-in"
+    leave-to-class="opacity-0 translate-y-2"
+  >
+    <div
+      v-if="backendWarmState.isWaking"
+      class="pointer-events-none fixed inset-x-4 bottom-20 z-[100] flex justify-center md:bottom-5"
+    >
+      <div class="inline-flex items-center gap-2.5 rounded-full border border-indigo-200/60 bg-slate-900/90 px-4 py-2 text-xs font-medium text-white shadow-lg backdrop-blur-md">
+        <Loader2 class="h-3.5 w-3.5 shrink-0 animate-spin text-indigo-300" />
+        <span>Đang đánh thức máy chủ, lần đầu mở lại có thể mất ~30–50 giây...</span>
+      </div>
+    </div>
+  </Transition>
 </template>
