@@ -7,6 +7,15 @@ import { useAuthStore } from '../../stores/auth';
 import { isTenantMode, isAdminMode } from '../../utils/portalMode';
 import { navigateWithFallback, performLogoutAndRedirect } from '../../utils/authSession';
 import InviteCardModal from '../../components/InviteCardModal.vue';
+import SessionAllocationField from '../../components/SessionAllocationField.vue';
+import TenantSessionLinksCard from '../../components/TenantSessionLinksCard.vue';
+import {
+  buildInviteUrl,
+  formatSessionLabel,
+  sessionBadgeClasses,
+  splitDefaultCapacities,
+  validateSessionForm,
+} from '../../utils/eventSessions';
 import {
   Activity,
   ArrowDownToLine,
@@ -120,13 +129,17 @@ const tenantEventInvites = ref<any[]>([]);
 const tenantActiveInviteLink = ref<any>(null);
 const loadingTenantInvites = ref(false);
 const tenantInviteQrUrl = ref('');
+const tenantQrByToken = ref<Record<string, string>>({});
 const copiedTenantInviteLink = ref(false);
+const tenantCopiedSessionKey = ref('');
 const showTenantZoomQrModal = ref(false);
+const tenantZoomTarget = ref<{ token: string; invite_url: string; session_type?: string } | null>(null);
 const showTenantInviteModal = ref(false);
 const newInviteForm = reactive({
   referrer_id: '',
   max_registrations: 1000,
   expires_in_days: 60,
+  session_type: 'FULL_DAY' as 'FULL_DAY' | 'MORNING' | 'AFTERNOON',
 });
 const creatingInvite = ref(false);
 
@@ -290,6 +303,9 @@ const eventForm = ref({
   end_at: '',
   registration_deadline: '',
   capacity: 500 as number | '',
+  session_mode: 'FULL_DAY' as 'FULL_DAY' | 'SPLIT_SESSIONS',
+  morning_capacity: null as number | null,
+  afternoon_capacity: null as number | null,
   approval_mode: 'REFERRER_ONLY' as 'REFERRER_ONLY' | 'TWO_TIER' | 'AUTO',
   event_package_id: '' as number | string
 });
@@ -320,6 +336,9 @@ const editEventForm = ref({
   end_at: '',
   registration_deadline: '',
   capacity: 500,
+  session_mode: 'FULL_DAY' as 'FULL_DAY' | 'SPLIT_SESSIONS',
+  morning_capacity: null as number | null,
+  afternoon_capacity: null as number | null,
   description: '',
   approval_mode: 'REFERRER_ONLY'
 });
@@ -332,6 +351,8 @@ const openEditEventModal = (ev: any) => {
     const date = new Date(d);
     return isNaN(date.getTime()) ? '' : new Date(date.getTime() - date.getTimezoneOffset() * 60000).toISOString().slice(0, 16);
   };
+  const cap = Number(ev.capacity || 500);
+  const split = splitDefaultCapacities(cap);
   editEventForm.value = {
     id: ev.id,
     name: ev.name || '',
@@ -341,7 +362,10 @@ const openEditEventModal = (ev: any) => {
     start_at: toInputDate(ev.start_at),
     end_at: toInputDate(ev.end_at),
     registration_deadline: toInputDate(ev.registration_deadline),
-    capacity: ev.capacity || 500,
+    capacity: cap,
+    session_mode: ev.session_mode === 'SPLIT_SESSIONS' ? 'SPLIT_SESSIONS' : 'FULL_DAY',
+    morning_capacity: ev.morning_capacity !== null && ev.morning_capacity !== undefined ? Number(ev.morning_capacity) : split.morning,
+    afternoon_capacity: ev.afternoon_capacity !== null && ev.afternoon_capacity !== undefined ? Number(ev.afternoon_capacity) : split.afternoon,
     description: ev.description || '',
     approval_mode: ev.approval_mode || 'REFERRER_ONLY'
   };
@@ -352,6 +376,18 @@ const openEditEventModal = (ev: any) => {
 const saveEditEvent = async () => {
   if (!editEventForm.value.name || !editEventForm.value.location) {
     alert('Vui lòng điền tên và địa điểm sự kiện.');
+    return;
+  }
+  const cap = Number(editEventForm.value.capacity);
+  const sessionErr = validateSessionForm({
+    sessionMode: editEventForm.value.session_mode,
+    capacity: cap,
+    morningCapacity: editEventForm.value.morning_capacity,
+    afternoonCapacity: editEventForm.value.afternoon_capacity,
+  });
+  if (sessionErr) {
+    errorMessage.value = sessionErr;
+    alert(sessionErr);
     return;
   }
   saving.value = true;
@@ -366,12 +402,17 @@ const saveEditEvent = async () => {
       start_at: toMysqlDate(editEventForm.value.start_at),
       end_at: toMysqlDate(editEventForm.value.end_at),
       registration_deadline: toMysqlDate(editEventForm.value.registration_deadline) || null,
-      capacity: Number(editEventForm.value.capacity),
+      capacity: cap,
+      session_mode: editEventForm.value.session_mode,
+      morning_capacity: editEventForm.value.session_mode === 'SPLIT_SESSIONS' ? Number(editEventForm.value.morning_capacity ?? 0) : null,
+      afternoon_capacity: editEventForm.value.session_mode === 'SPLIT_SESSIONS' ? Number(editEventForm.value.afternoon_capacity ?? 0) : null,
       description: editEventForm.value.description,
       approval_mode: editEventForm.value.approval_mode
     });
+    const editedId = editEventForm.value.id;
     showEditEventModal.value = false;
     await loadPortal();
+    await loadTenantEventInvites(editedId);
   } catch (error: any) {
     errorMessage.value = explainError(error);
   } finally {
@@ -547,62 +588,168 @@ const loadEventDetails = async (event: any) => {
   }
 };
 
+const syncPackageCapacity = () => {
+  const cap = Number(selectedPackageMaxAttendees.value) || 500;
+  eventForm.value.capacity = cap;
+  if (eventForm.value.session_mode === 'SPLIT_SESSIONS') {
+    const m = Number(eventForm.value.morning_capacity ?? 0);
+    const a = Number(eventForm.value.afternoon_capacity ?? 0);
+    if (m + a > cap || m + a <= 0) {
+      const split = splitDefaultCapacities(cap);
+      eventForm.value.morning_capacity = split.morning;
+      eventForm.value.afternoon_capacity = split.afternoon;
+    }
+  }
+};
+
+const sessionPrimaryLinks = computed(() => {
+  const ev = selectedEvent.value;
+  const normalized = (tenantEventInvites.value || []).map((inv: any) => ({
+    ...inv,
+    session_type: inv.session_type || 'FULL_DAY',
+    invite_url: inv.invite_url || buildInviteUrl(inv.token),
+  }));
+
+  if (ev?.session_mode === 'SPLIT_SESSIONS') {
+    return (['MORNING', 'AFTERNOON'] as const)
+      .map((sType) => {
+        const matches = normalized.filter((inv: any) => inv.session_type === sType);
+        const picked =
+          matches.find((inv: any) => inv.status === 'ACTIVE' && !inv.referrer_id) ||
+          matches.find((inv: any) => inv.status === 'ACTIVE') ||
+          matches[0];
+        if (!picked) return null;
+        return {
+          ...picked,
+          session_type: sType,
+          session_capacity: sType === 'MORNING' ? Number(ev.morning_capacity ?? picked.max_registrations ?? 0) : Number(ev.afternoon_capacity ?? picked.max_registrations ?? 0),
+          session_registered: picked.current_session_registrations ?? picked.total_registered ?? picked.current_registrations ?? 0,
+        };
+      })
+      .filter(Boolean);
+  }
+
+  if (tenantActiveInviteLink.value) {
+    return [
+      {
+        ...tenantActiveInviteLink.value,
+        session_type: tenantActiveInviteLink.value.session_type || 'FULL_DAY',
+        session_capacity: ev?.capacity ?? tenantActiveInviteLink.value.max_registrations,
+        session_registered:
+          tenantActiveInviteLink.value.current_session_registrations ??
+          ev?.registered_count ??
+          tenantActiveInviteLink.value.total_registered ??
+          tenantActiveInviteLink.value.current_registrations ??
+          0,
+      },
+    ];
+  }
+  return [];
+});
+
 const loadTenantEventInvites = async (eventId: number) => {
   if (!eventId) return;
   loadingTenantInvites.value = true;
   try {
     const res = await api.get(`/tenants/portal/events/${eventId}/invites`);
-    let invites = res.data.data || [];
-    
-    // Tìm link active hoặc lấy link đầu tiên
-    let active = invites.find((l: any) => l.status === 'ACTIVE') || invites[0];
-    
-    // Fallback: nếu backend chưa có link nào, tự động gọi tạo link
-    if (!active) {
+    let invites = (res.data.data || []).map((inv: any) => ({
+      ...inv,
+      session_type: inv.session_type || 'FULL_DAY',
+      invite_url: inv.token ? buildInviteUrl(inv.token) : (inv.invite_url || inv.url || ''),
+    }));
+
+    const ev = events.value.find((e: any) => Number(e.id) === Number(eventId)) || selectedEvent.value;
+    const isSplit = ev?.session_mode === 'SPLIT_SESSIONS';
+
+    if (isSplit) {
+      for (const sType of ['MORNING', 'AFTERNOON'] as const) {
+        const hasSessionLink = invites.some((l: any) => l.session_type === sType);
+        if (!hasSessionLink) {
+          try {
+            const sCap = sType === 'MORNING' ? Number(ev?.morning_capacity ?? 0) : Number(ev?.afternoon_capacity ?? 0);
+            const createRes = await api.post(`/tenants/portal/events/${eventId}/invites`, {
+              session_type: sType,
+              max_registrations: Math.max(1, sCap || Number(ev?.capacity) || 1000),
+              expires_in_days: 60,
+            });
+            const created = createRes.data?.data;
+            if (created) {
+              invites.push({
+                ...created,
+                session_type: created.session_type || sType,
+                invite_url: created.token ? buildInviteUrl(created.token) : (created.invite_url || ''),
+              });
+            }
+          } catch (e) {
+            console.warn(`Auto create ${sType} invite link error:`, e);
+          }
+        }
+      }
+    } else if (!invites.length) {
       try {
         const createRes = await api.post(`/tenants/portal/events/${eventId}/invites`, {
-          max_registrations: selectedEvent.value?.capacity || 1000,
+          session_type: 'FULL_DAY',
+          max_registrations: ev?.capacity || 1000,
           expires_in_days: 60,
         });
-        active = createRes.data?.data;
-        if (active) {
-          invites.unshift(active);
+        const created = createRes.data?.data;
+        if (created) {
+          invites.unshift({
+            ...created,
+            session_type: created.session_type || 'FULL_DAY',
+            invite_url: created.token ? buildInviteUrl(created.token) : (created.invite_url || ''),
+          });
         }
       } catch (e) {
         console.warn('Auto create tenant invite link error:', e);
       }
     }
 
+    const active = invites.find((l: any) => l.status === 'ACTIVE' && (isSplit || l.session_type === 'FULL_DAY')) ||
+      invites.find((l: any) => l.status === 'ACTIVE') ||
+      invites[0];
+
     if (active) {
-      active.invite_url = active.token
-        ? `${window.location.origin}/invite/${active.token}`
-        : (active.invite_url || active.url || `${window.location.origin}/invite/event_${eventId}`);
+      active.invite_url = active.token ? buildInviteUrl(active.token) : (active.invite_url || active.url || `${window.location.origin}/invite/event_${eventId}`);
       tenantActiveInviteLink.value = active;
-      try {
-        tenantInviteQrUrl.value = await QRCode.toDataURL(active.invite_url, { width: 300, margin: 2 });
-      } catch (qrErr) {
-        console.warn('QRCode.toDataURL error:', qrErr);
-      }
     } else {
-      // Fallback dự phòng để mobile/desktop luôn luôn có link và QR ngay tức khắc
       const fallbackUrl = `${window.location.origin}/invite/event_${eventId}`;
-      tenantActiveInviteLink.value = { invite_url: fallbackUrl, token: `event_${eventId}`, status: 'ACTIVE' };
-      try {
-        tenantInviteQrUrl.value = await QRCode.toDataURL(fallbackUrl, { width: 300, margin: 2 });
-      } catch (_) {}
+      tenantActiveInviteLink.value = { invite_url: fallbackUrl, token: `event_${eventId}`, status: 'ACTIVE', session_type: 'FULL_DAY' };
     }
 
-    tenantEventInvites.value = invites.map((inv: any) => ({
-      ...inv,
-      invite_url: inv.token ? `${window.location.origin}/invite/${inv.token}` : (inv.invite_url || inv.url || ''),
-    }));
+    tenantEventInvites.value = invites;
+
+    const qrTargets = new Map<string, string>();
+    if (tenantActiveInviteLink.value?.token && tenantActiveInviteLink.value?.invite_url) {
+      qrTargets.set(tenantActiveInviteLink.value.token, tenantActiveInviteLink.value.invite_url);
+    }
+    for (const sType of ['MORNING', 'AFTERNOON']) {
+      const link = invites.find((l: any) => l.session_type === sType && l.status === 'ACTIVE') || invites.find((l: any) => l.session_type === sType);
+      if (link?.token && link?.invite_url) {
+        qrTargets.set(link.token, link.invite_url);
+      }
+    }
+    const qrMap: Record<string, string> = {};
+    await Promise.all(
+      Array.from(qrTargets.entries()).map(async ([tk, url]) => {
+        try {
+          qrMap[tk] = await QRCode.toDataURL(url, { width: 300, margin: 2 });
+        } catch (qrErr) {
+          console.warn('QRCode.toDataURL error:', qrErr);
+        }
+      })
+    );
+    tenantQrByToken.value = qrMap;
+    tenantInviteQrUrl.value = (tenantActiveInviteLink.value?.token && qrMap[tenantActiveInviteLink.value.token]) || Object.values(qrMap)[0] || '';
   } catch (e) {
     console.warn('loadTenantEventInvites error:', e);
     if (eventId) {
       const fallbackUrl = `${window.location.origin}/invite/event_${eventId}`;
-      tenantActiveInviteLink.value = { invite_url: fallbackUrl, token: `event_${eventId}`, status: 'ACTIVE' };
+      tenantActiveInviteLink.value = { invite_url: fallbackUrl, token: `event_${eventId}`, status: 'ACTIVE', session_type: 'FULL_DAY' };
       try {
-        tenantInviteQrUrl.value = await QRCode.toDataURL(fallbackUrl, { width: 300, margin: 2 });
+        const fallbackQr = await QRCode.toDataURL(fallbackUrl, { width: 300, margin: 2 });
+        tenantInviteQrUrl.value = fallbackQr;
+        tenantQrByToken.value = { [`event_${eventId}`]: fallbackQr };
       } catch (_) {}
     }
   } finally {
@@ -621,38 +768,59 @@ watch(
   { immediate: true }
 );
 
-const copyTenantInviteLink = async (url?: string) => {
-  const targetUrl = url || tenantActiveInviteLink.value?.invite_url;
+const copyTenantInviteLink = async (target?: string | any) => {
+  const linkObj = typeof target === 'object' && target ? target : null;
+  const targetUrl = (typeof target === 'string' ? target : linkObj?.invite_url) || tenantActiveInviteLink.value?.invite_url;
   if (!targetUrl) return;
   await navigator.clipboard.writeText(targetUrl);
   copiedTenantInviteLink.value = true;
+  tenantCopiedSessionKey.value = linkObj?.session_type || 'FULL_DAY';
   setTimeout(() => {
     copiedTenantInviteLink.value = false;
+    tenantCopiedSessionKey.value = '';
   }, 2000);
 };
 
-const shareTenantInviteLink = async (url?: string) => {
-  const targetUrl = url || tenantActiveInviteLink.value?.invite_url;
+const shareTenantInviteLink = async (target?: string | any) => {
+  const linkObj = typeof target === 'object' && target ? target : null;
+  const targetUrl = (typeof target === 'string' ? target : linkObj?.invite_url) || tenantActiveInviteLink.value?.invite_url;
   if (!targetUrl) return;
   const eventName = selectedEvent.value?.name || 'Sự kiện';
+  const sessionSuffix = linkObj?.session_type && linkObj.session_type !== 'FULL_DAY'
+    ? ` (${formatSessionLabel(linkObj.session_type)})`
+    : '';
   if (typeof navigator !== 'undefined' && navigator.share) {
     try {
       await navigator.share({
-        title: `Thư mời tham dự: ${eventName}`,
-        text: `Trân trọng kính mời bạn tham gia ${eventName}. Đăng ký nhận vé QR tại: ${targetUrl}`,
+        title: `Thư mời tham dự: ${eventName}${sessionSuffix}`,
+        text: `Trân trọng kính mời bạn tham gia ${eventName}${sessionSuffix}. Đăng ký nhận vé QR tại: ${targetUrl}`,
         url: targetUrl,
       });
     } catch (e) {
       // User cancelled
     }
   } else {
-    await copyTenantInviteLink(targetUrl);
+    await copyTenantInviteLink(target);
   }
 };
 
-const openAdminInviteCard = (att?: any) => {
+const openTenantZoomQr = (link?: any) => {
+  const target = link || tenantActiveInviteLink.value;
+  if (!target) return;
+  tenantZoomTarget.value = {
+    token: target.token,
+    invite_url: target.invite_url || buildInviteUrl(target.token),
+    session_type: target.session_type || 'FULL_DAY',
+  };
+  showTenantZoomQrModal.value = true;
+};
+
+const openAdminInviteCard = (att?: any, targetLink?: any) => {
   const ev = selectedEvent.value;
-  const link = tenantActiveInviteLink.value;
+  const link = targetLink || tenantActiveInviteLink.value;
+  const sessionSuffix = link?.session_type && link.session_type !== 'FULL_DAY'
+    ? ` · ${formatSessionLabel(link.session_type).toUpperCase()}`
+    : '';
   if (att) {
     adminCardData.value = {
       attendee_name: att.full_name || 'Kính mời Quý Khách',
@@ -661,7 +829,7 @@ const openAdminInviteCard = (att?: any) => {
       event_location: ev?.location,
       event_start_at: ev?.start_at,
       qr_data: att.ticket_code || link?.invite_url || window.location.origin,
-      code_label: att.ticket_code ? `MÃ VÉ: ${att.ticket_code}` : 'QUÉT ĐỂ ĐĂNG KÝ (VIP)',
+      code_label: att.ticket_code ? `MÃ VÉ: ${att.ticket_code}` : `QUÉT ĐỂ ĐĂNG KÝ (VIP)${sessionSuffix}`,
     };
   } else {
     adminCardData.value = {
@@ -671,10 +839,20 @@ const openAdminInviteCard = (att?: any) => {
       event_location: ev?.location,
       event_start_at: ev?.start_at,
       qr_data: link?.invite_url || window.location.origin,
-      code_label: 'QUÉT ĐỂ ĐĂNG KÝ THAM DỰ (VIP)',
+      code_label: `QUÉT ĐỂ ĐĂNG KÝ${sessionSuffix} (VIP)`,
     };
   }
   showAdminInviteCardModal.value = true;
+};
+
+const openCreateTenantInviteModal = () => {
+  const ev = selectedEvent.value;
+  newInviteForm.session_type = ev?.session_mode === 'SPLIT_SESSIONS' ? 'MORNING' : 'FULL_DAY';
+  newInviteForm.max_registrations =
+    ev?.session_mode === 'SPLIT_SESSIONS'
+      ? Math.max(1, Number(ev?.morning_capacity ?? ev?.capacity ?? 500))
+      : Math.max(1, Number(ev?.capacity ?? 1000));
+  showTenantInviteModal.value = true;
 };
 
 const handleCreateTenantInvite = async () => {
@@ -685,11 +863,13 @@ const handleCreateTenantInvite = async () => {
       referrer_id: newInviteForm.referrer_id ? Number(newInviteForm.referrer_id) : undefined,
       max_registrations: Number(newInviteForm.max_registrations || 1000),
       expires_in_days: Number(newInviteForm.expires_in_days || 60),
+      session_type: selectedEvent.value.session_mode === 'SPLIT_SESSIONS' ? newInviteForm.session_type : 'FULL_DAY',
     });
     showTenantInviteModal.value = false;
     newInviteForm.referrer_id = '';
     newInviteForm.max_registrations = 1000;
     newInviteForm.expires_in_days = 60;
+    newInviteForm.session_type = 'FULL_DAY';
     await loadTenantEventInvites(selectedEvent.value.id);
   } catch (e: any) {
     alert(e.response?.data?.message || e.message);
@@ -708,6 +888,18 @@ const loadTeam = async () => {
 };
 
 const createEvent = async () => {
+  const cap = Number(eventForm.value.capacity) || selectedPackageMaxAttendees.value;
+  const sessionErr = validateSessionForm({
+    sessionMode: eventForm.value.session_mode,
+    capacity: cap,
+    morningCapacity: eventForm.value.morning_capacity,
+    afternoonCapacity: eventForm.value.afternoon_capacity,
+  });
+  if (sessionErr) {
+    errorMessage.value = sessionErr;
+    return;
+  }
+
   saving.value = true;
   errorMessage.value = '';
   try {
@@ -740,7 +932,10 @@ const createEvent = async () => {
       start_at: toMysqlDate(eventForm.value.start_at),
       end_at: toMysqlDate(eventForm.value.end_at),
       registration_deadline: toMysqlDate(eventForm.value.registration_deadline) || null,
-      capacity: Number(eventForm.value.capacity) || selectedPackageMaxAttendees.value,
+      capacity: cap,
+      session_mode: eventForm.value.session_mode,
+      morning_capacity: eventForm.value.session_mode === 'SPLIT_SESSIONS' ? Number(eventForm.value.morning_capacity ?? 0) : null,
+      afternoon_capacity: eventForm.value.session_mode === 'SPLIT_SESSIONS' ? Number(eventForm.value.afternoon_capacity ?? 0) : null,
       approval_mode: eventForm.value.approval_mode,
       event_package_id: eventPackageId,
       plan_id: planId,
@@ -758,12 +953,16 @@ const createEvent = async () => {
       end_at: '',
       registration_deadline: '',
       capacity: 500,
+      session_mode: 'FULL_DAY',
+      morning_capacity: null,
+      afternoon_capacity: null,
       approval_mode: 'REFERRER_ONLY',
       event_package_id: ''
     };
     showEventModal.value = false;
-    activePanel.value = 'overview';
+    activePanel.value = created.session_mode === 'SPLIT_SESSIONS' ? 'invites' : 'overview';
     await loadPortal();
+    await loadTenantEventInvites(created.id);
     if (created.payment_status === 'PENDING_PAYMENT') {
       openPaymentModal(created);
     }
@@ -819,6 +1018,9 @@ const reopenEvent = async () => {
 
 const openEventModal = (packageId?: number | string) => {
   eventForm.value.approval_mode = 'REFERRER_ONLY';
+  eventForm.value.session_mode = 'FULL_DAY';
+  eventForm.value.morning_capacity = null;
+  eventForm.value.afternoon_capacity = null;
   if (packageId) {
     eventForm.value.event_package_id = packageId;
   } else if (Number(usage.value?.free_events_remaining) > 0 && usage.value?.trial_package) {
@@ -3693,104 +3895,21 @@ onBeforeUnmount(stopScanner);
                 </article>
               </div>
 
-              <!-- THẺ THƯ MỜI & LINK QR (COMPACT & BEAUTIFUL) -->
-              <section class="card p-4 sm:p-5 bg-gradient-to-br from-white via-slate-50 to-indigo-50/40 rounded-3xl border border-slate-200/90 shadow-2xs space-y-3.5">
-                <div class="flex items-center justify-between gap-3 border-b border-slate-100 pb-3">
-                  <div class="flex items-center gap-2">
-                    <span class="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-primary-50 border border-primary-200 text-primary-700 text-xs font-bold">
-                      <Sparkles :size="13" class="text-primary-600" />
-                      Kênh Mời & Mã QR Chính Thức
-                    </span>
-                  </div>
-                  <button
-                    type="button"
-                    @click="activePanel = 'invites'"
-                    class="text-xs font-bold text-primary-600 hover:text-primary-800 flex items-center gap-1 cursor-pointer"
-                  >
-                    Xem chi tiết <ArrowRight :size="13" />
-                  </button>
-                </div>
-
-                <div class="grid sm:grid-cols-[130px_1fr] gap-3.5 items-center">
-                  <!-- QR Code Mini Box -->
-                  <div class="flex flex-col items-center gap-2 p-2.5 bg-white rounded-2xl border border-slate-200/80 shadow-2xs">
-                    <div
-                      @click="showTenantZoomQrModal = true"
-                      class="relative p-1 bg-white rounded-xl cursor-pointer hover:scale-102 transition group"
-                      title="Chạm để phóng to mã QR"
-                    >
-                      <img
-                        v-if="tenantInviteQrUrl"
-                        :src="tenantInviteQrUrl"
-                        alt="Mã QR Mời"
-                        class="w-28 h-28 object-contain rounded-lg"
-                      />
-                      <div v-else class="w-28 h-28 flex flex-col items-center justify-center text-slate-400 text-xs text-center p-2">
-                        <span v-if="loadingTenantInvites">Đang tạo...</span>
-                        <button v-else type="button" @click.stop="selectedEvent?.id && loadTenantEventInvites(selectedEvent.id)" class="text-primary-600 font-bold underline">Tạo QR</button>
-                      </div>
-                      <div v-if="tenantInviteQrUrl" class="absolute inset-0 bg-primary-900/60 rounded-xl opacity-0 group-hover:opacity-100 transition flex items-center justify-center text-white text-[11px] font-bold gap-1 pointer-events-none">
-                        <Maximize2 :size="13" /> Phóng to
-                      </div>
-                    </div>
-                    <button
-                      type="button"
-                      @click="showTenantZoomQrModal = true"
-                      :disabled="!tenantInviteQrUrl"
-                      class="w-full py-1 px-2 bg-slate-100 hover:bg-slate-200 rounded-lg text-slate-700 text-[11px] font-bold flex items-center justify-center gap-1 transition cursor-pointer"
-                    >
-                      <Maximize2 :size="11" /> Phóng to QR
-                    </button>
-                  </div>
-
-                  <!-- Link Box & Actions -->
-                  <div class="space-y-2.5">
-                    <div>
-                      <span class="text-[11px] font-bold uppercase tracking-wider text-slate-500 block mb-1">
-                        Link đăng ký tham dự chính thức
-                      </span>
-                      <div class="flex items-center gap-1.5 p-1 bg-white border border-slate-200 rounded-xl shadow-2xs">
-                        <span class="pl-2 text-slate-400 shrink-0"><Link2 :size="14" /></span>
-                        <input
-                          readonly
-                          :value="tenantActiveInviteLink?.invite_url || (loadingTenantInvites ? 'Đang tạo link mời...' : 'Đang lấy link...')"
-                          class="flex-1 text-xs font-mono font-bold text-primary-700 bg-transparent border-0 outline-none select-all truncate py-1.5"
-                        />
-                        <button
-                          type="button"
-                          @click="copyTenantInviteLink()"
-                          :disabled="!tenantActiveInviteLink?.invite_url"
-                          class="px-3 py-1.5 rounded-lg bg-primary-700 hover:bg-primary-800 text-white text-xs font-bold flex items-center gap-1 shrink-0 transition cursor-pointer"
-                        >
-                          <Check v-if="copiedTenantInviteLink" :size="13" />
-                          <Copy v-else :size="13" />
-                          <span>{{ copiedTenantInviteLink ? 'Đã chép' : 'Sao chép' }}</span>
-                        </button>
-                      </div>
-                    </div>
-
-                    <div class="grid grid-cols-2 gap-2">
-                      <button
-                        type="button"
-                        @click="shareTenantInviteLink()"
-                        :disabled="!tenantActiveInviteLink?.invite_url"
-                        class="py-2 px-2.5 rounded-xl bg-white border border-slate-200 hover:border-primary-300 text-slate-700 text-xs font-bold flex items-center justify-center gap-1.5 shadow-2xs transition cursor-pointer"
-                      >
-                        <Share2 :size="13" class="text-primary-600" />
-                        <span>Chia sẻ Zalo/SMS</span>
-                      </button>
-                      <button
-                        type="button"
-                        @click="openAdminInviteCard()"
-                        class="py-2 px-2.5 rounded-xl bg-gradient-to-r from-amber-500 to-orange-500 hover:from-amber-600 hover:to-orange-600 text-white text-xs font-bold flex items-center justify-center gap-1.5 shadow-xs transition cursor-pointer"
-                      >
-                        <Sparkles :size="13" />
-                        <span>Tạo thiệp VIP</span>
-                      </button>
-                    </div>
-                  </div>
-                </div>
-              </section>
+              <!-- THẺ THƯ MỜI & LINK QR (COMPACT & HỖ TRỢ SÁNG/CHIỀU) -->
+              <TenantSessionLinksCard
+                :selectedEvent="selectedEvent"
+                :links="sessionPrimaryLinks"
+                :qrByToken="tenantQrByToken"
+                :loading="loadingTenantInvites"
+                :copiedKey="tenantCopiedSessionKey"
+                :compact="true"
+                @copy="copyTenantInviteLink($event)"
+                @share="shareTenantInviteLink($event)"
+                @zoom="openTenantZoomQr($event)"
+                @vip-card="openAdminInviteCard(undefined, $event)"
+                @refresh="selectedEvent?.id && loadTenantEventInvites(selectedEvent.id)"
+                @go-invites="activePanel = 'invites'"
+              />
 
               <!-- KHÁCH MỜI GẦN ĐÂY (TOP 4) -->
               <section class="surface-card attendee-card">
@@ -3814,7 +3933,16 @@ onBeforeUnmount(stopScanner);
                     class="p-3 flex items-center justify-between gap-3 hover:bg-slate-50 transition"
                   >
                     <div>
-                      <b class="text-xs font-bold text-slate-800 block">{{ attendee.full_name }}</b>
+                      <div class="flex items-center gap-1.5 flex-wrap">
+                        <b class="text-xs font-bold text-slate-800">{{ attendee.full_name }}</b>
+                        <span
+                          v-if="attendee.session_type && attendee.session_type !== 'FULL_DAY'"
+                          class="px-2 py-0.5 rounded-full border text-[10px] font-bold"
+                          :class="sessionBadgeClasses(attendee.session_type)"
+                        >
+                          {{ formatSessionLabel(attendee.session_type) }}
+                        </span>
+                      </div>
                       <span class="text-[11px] text-slate-500 font-mono">{{ attendee.phone || attendee.email }}</span>
                     </div>
                     <div class="flex items-center gap-2 shrink-0">
@@ -3860,149 +3988,61 @@ onBeforeUnmount(stopScanner);
                 </div>
               </div>
 
-              <!-- THẺ HERO MÃ QR & LINK MỜI CAO CẤP -->
-              <section class="card p-4 sm:p-6 bg-gradient-to-br from-white via-slate-50 to-indigo-50/50 rounded-3xl border border-slate-200/90 shadow-sm space-y-4">
-                <div class="flex items-center justify-between gap-3 border-b border-slate-100 pb-3">
-                  <div class="flex items-center gap-2">
-                    <span class="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-primary-50 border border-primary-200 text-primary-700 text-xs font-bold">
-                      <Sparkles :size="13" class="text-primary-600" />
-                      Mã QR & Link Mời Chính Thức
-                    </span>
-                  </div>
+              <!-- THẺ HERO MÃ QR & LINK MỜI CAO CẤP (HỖ TRỢ SÁNG/CHIỀU) -->
+              <div class="space-y-4">
+                <TenantSessionLinksCard
+                  :selectedEvent="selectedEvent"
+                  :links="sessionPrimaryLinks"
+                  :qrByToken="tenantQrByToken"
+                  :loading="loadingTenantInvites"
+                  :copiedKey="tenantCopiedSessionKey"
+                  :compact="false"
+                  @copy="copyTenantInviteLink($event)"
+                  @share="shareTenantInviteLink($event)"
+                  @zoom="openTenantZoomQr($event)"
+                  @vip-card="openAdminInviteCard(undefined, $event)"
+                  @refresh="selectedEvent?.id && loadTenantEventInvites(selectedEvent.id)"
+                  @create-new="openCreateTenantInviteModal"
+                />
 
-                  <button
-                    type="button"
-                    @click="showTenantInviteModal = true"
-                    class="px-3 py-1.5 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold text-xs flex items-center gap-1 transition cursor-pointer"
-                  >
-                    <Plus :size="14" />
-                    <span>Tạo link mới</span>
-                  </button>
-                </div>
-
-                <div class="grid sm:grid-cols-[170px_1fr] gap-4 items-center">
-                  <!-- QR Code Centerpiece -->
-                  <div class="flex flex-col items-center gap-2.5 p-3.5 bg-white rounded-2xl border border-slate-200 shadow-2xs">
-                    <div
-                      @click="showTenantZoomQrModal = true"
-                      class="relative p-1 bg-white rounded-xl cursor-pointer hover:scale-102 transition group"
-                      title="Chạm để phóng to mã QR"
-                    >
-                      <img
-                        v-if="tenantInviteQrUrl"
-                        :src="tenantInviteQrUrl"
-                        alt="Mã QR Mời"
-                        class="w-32 h-32 sm:w-36 sm:h-36 object-contain rounded-lg"
-                      />
-                      <div v-else class="w-32 h-32 sm:w-36 sm:h-36 flex flex-col items-center justify-center text-slate-400 text-xs text-center p-2">
-                        <span v-if="loadingTenantInvites">Đang tạo QR...</span>
-                        <button v-else type="button" @click.stop="selectedEvent?.id && loadTenantEventInvites(selectedEvent.id)" class="text-primary-600 font-bold underline">
-                          Tạo QR ngay
-                        </button>
-                      </div>
-                      <div v-if="tenantInviteQrUrl" class="absolute inset-0 bg-primary-900/60 rounded-xl opacity-0 group-hover:opacity-100 transition flex items-center justify-center text-white text-xs font-bold gap-1 pointer-events-none">
-                        <Maximize2 :size="14" /> Phóng to
-                      </div>
-                    </div>
-
-                    <div class="flex items-center gap-1.5 w-full">
-                      <button
-                        type="button"
-                        @click="showTenantZoomQrModal = true"
-                        :disabled="!tenantInviteQrUrl"
-                        class="flex-1 py-1.5 px-2 bg-slate-100 hover:bg-slate-200 rounded-xl text-slate-700 text-xs font-bold flex items-center justify-center gap-1 transition cursor-pointer"
-                      >
-                        <Maximize2 :size="12" /> Phóng to
-                      </button>
-                      <a
-                        v-if="tenantInviteQrUrl"
-                        :href="tenantInviteQrUrl"
-                        :download="`QR-${selectedEvent?.name || 'sukien'}.png`"
-                        class="flex-1 py-1.5 px-2 bg-primary-50 hover:bg-primary-100 text-primary-700 border border-primary-200 rounded-xl text-xs font-bold flex items-center justify-center gap-1 transition text-center cursor-pointer"
-                      >
-                        <Download :size="12" /> Tải về
-                      </a>
-                    </div>
-                  </div>
-
-                  <!-- Link Box & Features -->
-                  <div class="space-y-3">
-                    <div>
-                      <span class="text-xs font-bold uppercase tracking-wider text-slate-500 block mb-1">
-                        Đường link mời chính thức
-                      </span>
-                      <div class="flex items-center gap-2 p-1 bg-white border border-slate-200 rounded-2xl shadow-2xs">
-                        <span class="pl-2.5 text-slate-400 shrink-0"><Link2 :size="15" /></span>
-                        <input
-                          readonly
-                          :value="tenantActiveInviteLink?.invite_url || (loadingTenantInvites ? 'Đang tạo link mời...' : 'Đang lấy link...')"
-                          class="flex-1 text-xs font-mono font-bold text-primary-700 bg-transparent border-0 outline-none select-all truncate py-1.5"
-                        />
-                        <button
-                          type="button"
-                          @click="copyTenantInviteLink()"
-                          :disabled="!tenantActiveInviteLink?.invite_url"
-                          class="px-3.5 py-2 rounded-xl bg-primary-700 hover:bg-primary-800 text-white text-xs font-bold flex items-center gap-1.5 shrink-0 transition cursor-pointer"
-                        >
-                          <Check v-if="copiedTenantInviteLink" :size="13" />
-                          <Copy v-else :size="13" />
-                          <span>{{ copiedTenantInviteLink ? 'Đã chép!' : 'Sao chép' }}</span>
-                        </button>
-                      </div>
-                    </div>
-
-                    <div class="grid grid-cols-2 gap-2">
-                      <button
-                        type="button"
-                        @click="shareTenantInviteLink()"
-                        :disabled="!tenantActiveInviteLink?.invite_url"
-                        class="py-2.5 px-3 rounded-2xl bg-white border border-slate-200 hover:border-primary-300 text-slate-700 text-xs font-bold flex items-center justify-center gap-1.5 shadow-2xs transition cursor-pointer"
-                      >
-                        <Share2 :size="14" class="text-primary-600" />
-                        <span>Chia sẻ Zalo/SMS</span>
-                      </button>
-
-                      <button
-                        type="button"
-                        @click="openAdminInviteCard()"
-                        class="py-2.5 px-3 rounded-2xl bg-gradient-to-r from-amber-500 via-orange-500 to-amber-600 hover:from-amber-600 hover:to-orange-600 text-white text-xs font-bold flex items-center justify-center gap-1.5 shadow-xs transition cursor-pointer"
-                      >
-                        <Sparkles :size="14" />
-                        <span>Tạo thiệp VIP</span>
-                      </button>
-                    </div>
-
-                    <div class="p-3 bg-amber-50/70 border border-amber-200/80 rounded-2xl flex items-start gap-2.5 text-xs text-amber-900">
-                      <Sparkles :size="15" class="text-amber-600 shrink-0 mt-0.5" />
-                      <div>
-                        <b>Mẹo:</b> Bấm <strong>Tạo thiệp VIP</strong> để hệ thống tự động sinh thiệp mời online trang trọng có tên khách và mã QR riêng gửi tặng từng đối tác, khách quý.
-                      </div>
-                    </div>
+                <div class="p-3 bg-amber-50/70 border border-amber-200/80 rounded-2xl flex items-start gap-2.5 text-xs text-amber-900">
+                  <Sparkles :size="15" class="text-amber-600 shrink-0 mt-0.5" />
+                  <div>
+                    <b>Mẹo:</b> Bấm <strong>Thiệp VIP</strong> trên từng link để hệ thống tự động sinh thiệp mời online trang trọng có mã QR riêng{{ selectedEvent?.session_mode === 'SPLIT_SESSIONS' ? ' theo đúng buổi Sáng / Chiều' : '' }}.
                   </div>
                 </div>
 
                 <!-- Danh sách các link mời đã tạo -->
-                <div v-if="tenantEventInvites.length > 1" class="pt-3 border-t border-slate-100">
-                  <span class="text-xs font-bold text-slate-700 block mb-2">Tất cả các link mời của sự kiện này ({{ tenantEventInvites.length }} link):</span>
+                <div v-if="tenantEventInvites.length > 1" class="card p-4 rounded-3xl border border-slate-200/90 bg-white space-y-2">
+                  <span class="text-xs font-bold text-slate-700 block">Tất cả các link mời của sự kiện này ({{ tenantEventInvites.length }} link):</span>
                   <div class="divide-y divide-slate-100 border border-slate-200/80 rounded-2xl overflow-hidden bg-white shadow-2xs">
-                    <div v-for="link in tenantEventInvites" :key="link.id" class="p-3 flex items-center justify-between text-xs gap-3 hover:bg-slate-50 transition">
-                      <div class="min-w-0">
+                    <div v-for="link in tenantEventInvites" :key="link.id" class="p-3 flex items-center justify-between text-xs gap-3 hover:bg-slate-50 transition flex-wrap">
+                      <div class="min-w-0 flex items-center gap-2 flex-wrap">
+                        <span
+                          class="px-2 py-0.5 rounded-full border text-[10px] font-bold shrink-0"
+                          :class="sessionBadgeClasses(link.session_type)"
+                        >
+                          {{ formatSessionLabel(link.session_type) }}
+                        </span>
                         <span class="font-bold text-slate-800">{{ link.referrer_name }}</span>
-                        <span class="text-slate-400 text-[11px] ml-1.5 font-mono">#{{ link.token }}</span>
+                        <span class="text-slate-400 text-[11px] font-mono">#{{ link.token }}</span>
                       </div>
                       <div class="flex items-center gap-3 shrink-0">
-                        <span class="text-[11px] text-slate-500 font-semibold">{{ link.total_registered || 0 }} khách đã đăng ký</span>
-                        <button type="button" @click="copyTenantInviteLink(link.invite_url)" class="text-primary-600 font-bold hover:underline text-[11px] cursor-pointer">
+                        <span class="text-[11px] text-slate-500 font-semibold">{{ link.total_registered || 0 }} / {{ link.session_capacity ?? link.max_registrations }} khách</span>
+                        <button type="button" @click="openTenantZoomQr(link)" class="text-slate-600 font-bold hover:text-primary-700 text-[11px] cursor-pointer">
+                          QR
+                        </button>
+                        <button type="button" @click="copyTenantInviteLink(link)" class="text-primary-600 font-bold hover:underline text-[11px] cursor-pointer">
                           Sao chép
                         </button>
-                        <button type="button" @click="shareTenantInviteLink(link.invite_url)" class="text-slate-600 font-semibold hover:text-slate-900 text-[11px] cursor-pointer">
+                        <button type="button" @click="shareTenantInviteLink(link)" class="text-slate-600 font-semibold hover:text-slate-900 text-[11px] cursor-pointer">
                           Chia sẻ
                         </button>
                       </div>
                     </div>
                   </div>
                 </div>
-              </section>
+              </div>
             </template>
 
             <!-- ========================================== -->
@@ -4093,7 +4133,16 @@ onBeforeUnmount(stopScanner);
                     >
                       <div class="flex items-start justify-between gap-2">
                         <div>
-                          <b class="text-sm font-bold text-slate-900 block">{{ attendee.full_name }}</b>
+                          <div class="flex items-center gap-1.5 flex-wrap">
+                            <b class="text-sm font-bold text-slate-900">{{ attendee.full_name }}</b>
+                            <span
+                              v-if="attendee.session_type && attendee.session_type !== 'FULL_DAY'"
+                              class="px-2 py-0.5 rounded-full border text-[10px] font-bold"
+                              :class="sessionBadgeClasses(attendee.session_type)"
+                            >
+                              {{ formatSessionLabel(attendee.session_type) }}
+                            </span>
+                          </div>
                           <span class="text-xs text-slate-500 font-mono">{{ attendee.phone || attendee.email }}</span>
                         </div>
                         <span
@@ -4160,7 +4209,19 @@ onBeforeUnmount(stopScanner);
                           v-for="attendee in filteredAttendees"
                           :key="attendee.registration_id"
                         >
-                          <td><b>{{ attendee.full_name }}</b><small>{{ attendee.email }} · {{ attendee.phone }}</small></td>
+                          <td>
+                            <div class="flex items-center gap-1.5 flex-wrap">
+                              <b>{{ attendee.full_name }}</b>
+                              <span
+                                v-if="attendee.session_type && attendee.session_type !== 'FULL_DAY'"
+                                class="px-2 py-0.5 rounded-full border text-[10px] font-bold"
+                                :class="sessionBadgeClasses(attendee.session_type)"
+                              >
+                                {{ formatSessionLabel(attendee.session_type) }}
+                              </span>
+                            </div>
+                            <small>{{ attendee.email }} · {{ attendee.phone }}</small>
+                          </td>
                           <td>{{ attendee.referrer_name || '—' }}</td>
                           <td>
                             <span class="status-pill" :class="attendee.registration_status === 'APPROVED' ? 'status-green' : attendee.registration_status === 'REJECTED' ? 'status-gray' : 'status-amber'">
@@ -4478,7 +4539,7 @@ onBeforeUnmount(stopScanner);
               class="pkg-card"
               :class="{ 'pkg-card-selected': eventForm.event_package_id === 'trial' }"
             >
-              <input type="radio" value="trial" v-model="eventForm.event_package_id" @change="eventForm.capacity = selectedPackageMaxAttendees" class="sr-only" />
+              <input type="radio" value="trial" v-model="eventForm.event_package_id" @change="syncPackageCapacity" class="sr-only" />
               <div class="pkg-header">
                 <span class="pkg-tag-free">🎁 Miễn phí</span>
                 <span class="pkg-price-free">0 ₫</span>
@@ -4499,7 +4560,7 @@ onBeforeUnmount(stopScanner);
               class="pkg-card"
               :class="{ 'pkg-card-selected': eventForm.event_package_id === pkg.id }"
             >
-              <input type="radio" :value="pkg.id" v-model="eventForm.event_package_id" @change="eventForm.capacity = selectedPackageMaxAttendees" class="sr-only" />
+              <input type="radio" :value="pkg.id" v-model="eventForm.event_package_id" @change="syncPackageCapacity" class="sr-only" />
               <div class="pkg-header">
                 <span class="pkg-tag-paid">Đã mua</span>
                 <span class="pkg-price-paid">Sẵn sàng</span>
@@ -4519,7 +4580,7 @@ onBeforeUnmount(stopScanner);
               class="pkg-card"
               :class="{ 'pkg-card-selected': eventForm.event_package_id === 'plan_' + plan.id }"
             >
-              <input type="radio" :value="'plan_' + plan.id" v-model="eventForm.event_package_id" @change="eventForm.capacity = selectedPackageMaxAttendees" class="sr-only" />
+              <input type="radio" :value="'plan_' + plan.id" v-model="eventForm.event_package_id" @change="syncPackageCapacity" class="sr-only" />
               <div class="pkg-header">
                 <span class="pkg-tag-buy">Gói mua mới</span>
                 <span class="pkg-price-amount">{{ Number(plan.price_vnd).toLocaleString('vi-VN') }} ₫</span>
@@ -4624,6 +4685,16 @@ onBeforeUnmount(stopScanner);
                 Giới hạn số lượng khách đăng ký tối đa cho sự kiện này (không vượt quá hạn mức gói đã chọn: <b>{{ selectedPackageMaxAttendees }} người</b>).
               </p>
             </div>
+
+            <SessionAllocationField
+              :sessionMode="eventForm.session_mode"
+              :morningCapacity="eventForm.morning_capacity"
+              :afternoonCapacity="eventForm.afternoon_capacity"
+              :capacity="Number(eventForm.capacity) || selectedPackageMaxAttendees"
+              @update:sessionMode="eventForm.session_mode = $event"
+              @update:morningCapacity="eventForm.morning_capacity = $event"
+              @update:afternoonCapacity="eventForm.afternoon_capacity = $event"
+            />
 
             <div>
               <label class="modern-label">Mô tả sự kiện (không bắt buộc)</label>
@@ -4863,6 +4934,16 @@ onBeforeUnmount(stopScanner);
             Hạn mức số lượng khách có thể nhận vé cho sự kiện này (tối đa theo gói: <b>{{ maxEditCapacity }} khách</b>).
           </p>
         </div>
+
+        <SessionAllocationField
+          :sessionMode="editEventForm.session_mode"
+          :morningCapacity="editEventForm.morning_capacity"
+          :afternoonCapacity="editEventForm.afternoon_capacity"
+          :capacity="Number(editEventForm.capacity) || maxEditCapacity"
+          @update:sessionMode="editEventForm.session_mode = $event"
+          @update:morningCapacity="editEventForm.morning_capacity = $event"
+          @update:afternoonCapacity="editEventForm.afternoon_capacity = $event"
+        />
 
         <div>
           <label class="block text-xs font-bold text-slate-700 mb-1">Mô tả sự kiện</label>
@@ -5184,7 +5265,7 @@ onBeforeUnmount(stopScanner);
 
       <div class="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-primary-50 text-primary-700 text-xs font-bold mb-2">
         <Sparkles :size="13" />
-        <span>Mã QR Sự Kiện Chính Thức</span>
+        <span>Mã QR {{ tenantZoomTarget?.session_type && tenantZoomTarget.session_type !== 'FULL_DAY' ? formatSessionLabel(tenantZoomTarget.session_type) : 'Sự Kiện Chính Thức' }}</span>
       </div>
 
       <h3 class="text-base font-bold text-slate-900 mb-0.5">
@@ -5196,8 +5277,8 @@ onBeforeUnmount(stopScanner);
 
       <div class="bg-white p-3 rounded-2xl border-2 border-dashed border-primary-200 inline-block shadow-xs mb-4">
         <img
-          v-if="tenantInviteQrUrl"
-          :src="tenantInviteQrUrl"
+          v-if="(tenantZoomTarget?.token && tenantQrByToken[tenantZoomTarget.token]) || tenantInviteQrUrl"
+          :src="(tenantZoomTarget?.token && tenantQrByToken[tenantZoomTarget.token]) || tenantInviteQrUrl"
           alt="QR Code Zoom"
           class="w-60 h-60 sm:w-64 sm:h-64 object-contain mx-auto"
         />
@@ -5208,9 +5289,9 @@ onBeforeUnmount(stopScanner);
 
       <div class="flex flex-col sm:flex-row gap-2">
         <a
-          v-if="tenantInviteQrUrl"
-          :href="tenantInviteQrUrl"
-          :download="`QR-${selectedEvent?.name || 'sukien'}.png`"
+          v-if="(tenantZoomTarget?.token && tenantQrByToken[tenantZoomTarget.token]) || tenantInviteQrUrl"
+          :href="(tenantZoomTarget?.token && tenantQrByToken[tenantZoomTarget.token]) || tenantInviteQrUrl"
+          :download="`QR-${selectedEvent?.name || 'sukien'}-${tenantZoomTarget?.session_type || 'FULL'}.png`"
           class="btn btn-secondary flex-1 py-2.5 text-xs font-bold justify-center gap-1.5 cursor-pointer"
         >
           <Download :size="14" />
@@ -5218,7 +5299,7 @@ onBeforeUnmount(stopScanner);
         </a>
         <button
           type="button"
-          @click="shareTenantInviteLink()"
+          @click="shareTenantInviteLink(tenantZoomTarget || undefined)"
           class="btn btn-primary flex-1 py-2.5 text-xs font-bold justify-center gap-1.5 cursor-pointer"
         >
           <Share2 :size="14" />
@@ -5246,6 +5327,17 @@ onBeforeUnmount(stopScanner);
       </p>
 
       <form @submit.prevent="handleCreateTenantInvite" class="space-y-4">
+        <div v-if="selectedEvent?.session_mode === 'SPLIT_SESSIONS'">
+          <label class="block text-xs font-bold text-slate-700 mb-1">Khung buổi áp dụng cho link này</label>
+          <select
+            v-model="newInviteForm.session_type"
+            class="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-800 focus:bg-white focus:outline-none focus:ring-2 focus:ring-primary-500"
+          >
+            <option value="MORNING">🌅 Buổi sáng (Tối đa {{ selectedEvent.morning_capacity }} khách)</option>
+            <option value="AFTERNOON">🌇 Buổi chiều (Tối đa {{ selectedEvent.afternoon_capacity }} khách)</option>
+          </select>
+        </div>
+
         <div>
           <label class="block text-xs font-bold text-slate-700 mb-1">Số lượng khách đăng ký tối đa qua link này</label>
           <input

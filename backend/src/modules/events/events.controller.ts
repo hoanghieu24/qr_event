@@ -26,7 +26,7 @@ export class EventsController {
   static async createEvent(req: Request, res: Response, next: NextFunction) {
     try {
       if (!req.user) return;
-      const { name, description, location, poster_base64, start_at, end_at, capacity, approval_mode, staff_quotas, tenant_id, plan_id, payment_status, payment_note } = req.body;
+      const { name, description, location, map_url, info_url, poster_base64, start_at, end_at, registration_deadline, capacity, session_mode, morning_capacity, afternoon_capacity, approval_mode, staff_quotas, tenant_id, plan_id, payment_status, payment_note } = req.body;
       if (!name || !location || !start_at || !end_at) {
         res.status(400).json({ success: false, message: 'Vui lòng cung cấp đầy đủ tên, địa điểm, thời gian.' });
         return;
@@ -35,10 +35,16 @@ export class EventsController {
         name,
         description,
         location,
+        map_url,
+        info_url,
         poster_base64,
         start_at,
         end_at,
+        registration_deadline: registration_deadline || null,
         capacity: capacity ? parseInt(capacity, 10) : undefined,
+        session_mode,
+        morning_capacity: morning_capacity !== undefined && morning_capacity !== null && morning_capacity !== '' ? parseInt(morning_capacity, 10) : undefined,
+        afternoon_capacity: afternoon_capacity !== undefined && afternoon_capacity !== null && afternoon_capacity !== '' ? parseInt(afternoon_capacity, 10) : undefined,
         approval_mode: approval_mode || 'REFERRER_ONLY',
         created_by: req.user.id,
         tenant_id: tenant_id ? parseInt(tenant_id, 10) : null,
@@ -144,6 +150,27 @@ export class EventsController {
       const id = parseInt(String(req.params.id), 10);
       const result = await EventsService.toggleEventStatus(id);
       res.json(result);
+    } catch (error: any) {
+      res.status(400).json({ success: false, message: error.message });
+    }
+  }
+
+  static async getEventInvites(req: Request, res: Response, next: NextFunction) {
+    try {
+      const id = parseInt(String(req.params.id), 10);
+      const invites = await EventsService.listEventInvites(id, req.user?.id);
+      res.json({ success: true, data: invites });
+    } catch (error: any) {
+      res.status(400).json({ success: false, message: error.message });
+    }
+  }
+
+  static async createEventInvite(req: Request, res: Response, next: NextFunction) {
+    try {
+      if (!req.user) return;
+      const id = parseInt(String(req.params.id), 10);
+      const invite = await EventsService.createEventInvite(id, req.body, req.user.id);
+      res.status(201).json({ success: true, data: invite });
     } catch (error: any) {
       res.status(400).json({ success: false, message: error.message });
     }

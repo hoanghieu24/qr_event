@@ -5,6 +5,7 @@ import api from '../../api/client';
 import { getSocket } from '../../api/socket';
 import QRCode from 'qrcode';
 import InviteCardModal from '../../components/InviteCardModal.vue';
+import { formatSessionLabel, sessionBadgeClasses } from '../../utils/eventSessions';
 import {
   Link2,
   QrCode,
@@ -53,6 +54,7 @@ const staffQuota = ref<any>(null);
 const quotaLoading = ref(false);
 const maxRegs = ref(50);
 const expireDays = ref(30);
+const linkSessionType = ref<'FULL_DAY' | 'MORNING' | 'AFTERNOON'>('FULL_DAY');
 const newlyCreatedUrl = ref('');
 
 // QR Viewer Modal
@@ -131,11 +133,17 @@ const loadQuota = async () => {
   }
 };
 
+const syncDefaultLinkSession = () => {
+  const ev = events.value.find((e: any) => e.id === selectedEventId.value);
+  linkSessionType.value = ev?.session_mode === 'SPLIT_SESSIONS' ? 'MORNING' : 'FULL_DAY';
+};
+
 const openCreateModal = async () => {
   if (selectedEvent.value && (selectedEvent.value.my_can_invite === 0 || selectedEvent.value.staff_can_invite === 0)) {
     alert('Tài khoản của bạn không được phân quyền tạo link mời cho sự kiện này.');
     return;
   }
+  syncDefaultLinkSession();
   showCreateLinkModal.value = true;
   newlyCreatedUrl.value = '';
   await loadQuota();
@@ -242,6 +250,7 @@ const handleCreateLink = async () => {
       event_id: selectedEventId.value,
       expires_in_days: expireDays.value,
       max_registrations: quota,
+      session_type: selectedEvent.value?.session_mode === 'SPLIT_SESSIONS' ? linkSessionType.value : 'FULL_DAY',
     });
     newlyCreatedUrl.value = `${window.location.origin}/invite/${res.data.data.token}`;
     await loadMyLinks();
@@ -585,6 +594,14 @@ const filteredRegistrations = computed(() => {
             </span>
 
             <span
+              v-if="currentEventLink?.session_type && currentEventLink.session_type !== 'FULL_DAY'"
+              class="px-2.5 py-0.5 text-[10px] font-black rounded-full border shrink-0"
+              :class="currentEventLink.session_type === 'MORNING' ? 'bg-amber-400/20 text-amber-200 border-amber-400/40' : 'bg-indigo-400/20 text-indigo-200 border-indigo-400/40'"
+            >
+              {{ formatSessionLabel(currentEventLink.session_type) }}
+            </span>
+
+            <span
               v-if="currentEventLink"
               class="px-2.5 py-0.5 text-[10px] font-bold rounded-full shrink-0"
               :class="(currentEventLink.status === 'CLOSED' || currentEventLink.current_registrations >= currentEventLink.max_registrations)
@@ -704,7 +721,18 @@ const filteredRegistrations = computed(() => {
           </thead>
           <tbody class="divide-y divide-slate-100">
             <tr v-for="l in otherLinks" :key="l.id" class="hover:bg-slate-50">
-              <td class="py-2.5 px-3 font-bold text-slate-800">{{ l.event_name }}</td>
+              <td class="py-2.5 px-3 font-bold text-slate-800">
+                <div class="flex items-center gap-1.5 flex-wrap">
+                  <span>{{ l.event_name }}</span>
+                  <span
+                    v-if="l.session_type && l.session_type !== 'FULL_DAY'"
+                    class="px-2 py-0.5 rounded-full border text-[10px] font-bold"
+                    :class="sessionBadgeClasses(l.session_type)"
+                  >
+                    {{ formatSessionLabel(l.session_type) }}
+                  </span>
+                </div>
+              </td>
               <td class="py-2.5 px-3 font-semibold text-slate-600">
                 {{ l.current_registrations }}/{{ l.max_registrations }} khách
               </td>
@@ -834,7 +862,16 @@ const filteredRegistrations = computed(() => {
                 {{ (reg.full_name || 'K').charAt(0).toUpperCase() }}
               </div>
               <div class="min-w-0">
-                <div class="font-extrabold text-slate-900 text-sm leading-tight truncate">{{ reg.full_name }}</div>
+                <div class="flex items-center gap-1.5 flex-wrap">
+                  <div class="font-extrabold text-slate-900 text-sm leading-tight truncate">{{ reg.full_name }}</div>
+                  <span
+                    v-if="reg.session_type && reg.session_type !== 'FULL_DAY'"
+                    class="px-2 py-0.5 rounded-full border text-[10px] font-bold shrink-0"
+                    :class="sessionBadgeClasses(reg.session_type)"
+                  >
+                    {{ formatSessionLabel(reg.session_type) }}
+                  </span>
+                </div>
                 <a :href="`tel:${reg.phone}`" class="text-xs font-mono font-bold text-primary-600 block mt-0.5 truncate">
                   {{ reg.phone }}
                 </a>
@@ -944,7 +981,16 @@ const filteredRegistrations = computed(() => {
                       {{ (reg.full_name || 'K').charAt(0).toUpperCase() }}
                     </div>
                     <div class="min-w-0 flex-1">
-                      <div class="font-extrabold text-slate-900 text-sm leading-tight truncate" :title="reg.full_name">{{ reg.full_name }}</div>
+                      <div class="flex items-center gap-1.5 flex-wrap">
+                        <div class="font-extrabold text-slate-900 text-sm leading-tight truncate" :title="reg.full_name">{{ reg.full_name }}</div>
+                        <span
+                          v-if="reg.session_type && reg.session_type !== 'FULL_DAY'"
+                          class="px-2 py-0.5 rounded-full border text-[10px] font-bold shrink-0"
+                          :class="sessionBadgeClasses(reg.session_type)"
+                        >
+                          {{ formatSessionLabel(reg.session_type) }}
+                        </span>
+                      </div>
                       <div class="text-[11px] text-slate-400 mt-0.5 truncate">{{ new Date(reg.created_at || Date.now()).toLocaleDateString('vi-VN') }}</div>
                     </div>
                   </div>
@@ -1145,11 +1191,22 @@ const filteredRegistrations = computed(() => {
             <label class="block font-bold text-slate-700 mb-1">Sự kiện</label>
             <select
               v-model="selectedEventId"
-              @change="loadQuota"
+              @change="loadQuota(); syncDefaultLinkSession()"
               required
               class="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl font-medium focus:ring-2 focus:ring-primary-500 focus:outline-none"
             >
               <option v-for="ev in events" :key="ev.id" :value="ev.id">{{ ev.name }}</option>
+            </select>
+          </div>
+
+          <div v-if="selectedEvent?.session_mode === 'SPLIT_SESSIONS'">
+            <label class="block font-bold text-slate-700 mb-1">Khung buổi áp dụng</label>
+            <select
+              v-model="linkSessionType"
+              class="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl font-bold text-slate-800 focus:ring-2 focus:ring-primary-500 focus:outline-none"
+            >
+              <option value="MORNING">🌅 Buổi sáng (Tối đa {{ selectedEvent.morning_capacity }} khách)</option>
+              <option value="AFTERNOON">🌇 Buổi chiều (Tối đa {{ selectedEvent.afternoon_capacity }} khách)</option>
             </select>
           </div>
 

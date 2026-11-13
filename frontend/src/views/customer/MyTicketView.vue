@@ -7,6 +7,7 @@ import {
   showBrowserNotification,
   checkUpcomingEventReminders
 } from '../../utils/notifications';
+import { formatSessionLabel, sessionBadgeClasses } from '../../utils/eventSessions';
 import {
   QrCode,
   Maximize2,
@@ -401,13 +402,22 @@ onUnmounted(() => {
               : 'bg-white text-slate-700 border border-slate-200/90 hover:bg-slate-50'"
             class="p-3 rounded-2xl text-left transition shrink-0 w-60 sm:w-64 flex flex-col justify-between"
           >
-            <div class="flex items-center justify-between gap-1 mb-1.5">
-              <span
-                :class="selectedIndex === idx ? 'bg-primary-500 text-white' : 'bg-slate-100 text-slate-600'"
-                class="px-2 py-0.5 rounded-md text-[10px] font-black"
-              >
-                #{{ idx + 1 }}
-              </span>
+            <div class="flex items-center justify-between gap-2 mb-1.5 flex-wrap">
+              <div class="flex items-center gap-1.5">
+                <span
+                  :class="selectedIndex === idx ? 'bg-primary-500 text-white' : 'bg-slate-100 text-slate-600'"
+                  class="px-2 py-0.5 rounded-md text-[10px] font-black"
+                >
+                  #{{ idx + 1 }}
+                </span>
+                <span
+                  v-if="t.session_type && t.session_type !== 'FULL_DAY'"
+                  class="px-2 py-0.5 rounded-md border text-[10px] font-bold"
+                  :class="sessionBadgeClasses(t.session_type)"
+                >
+                  {{ formatSessionLabel(t.session_type) }}
+                </span>
+              </div>
 
               <span
                 v-if="t.status === 'ISSUED'"
@@ -442,11 +452,18 @@ onUnmounted(() => {
           <div class="bg-gradient-to-br from-slate-950 via-slate-900 to-indigo-950 text-white p-5 sm:p-6 relative overflow-hidden">
             <div class="absolute -right-8 -top-8 w-36 h-36 bg-primary-500/15 rounded-full blur-2xl pointer-events-none"></div>
 
-            <div class="flex justify-between items-center mb-3 relative z-10">
-              <div class="flex items-center gap-2">
+            <div class="flex justify-between items-center mb-3 relative z-10 gap-2 flex-wrap">
+              <div class="flex items-center gap-2 flex-wrap">
                 <span class="px-2.5 py-1 bg-white/10 backdrop-blur-md text-primary-300 font-black text-[10px] rounded-lg tracking-wider uppercase border border-white/10 flex items-center gap-1">
                   <Ticket class="w-3 h-3" />
                   EventGo PASS
+                </span>
+                <span
+                  v-if="activeTicket.session_type && activeTicket.session_type !== 'FULL_DAY'"
+                  class="px-2.5 py-1 rounded-lg text-[10px] font-black border"
+                  :class="activeTicket.session_type === 'MORNING' ? 'bg-amber-400/20 text-amber-200 border-amber-400/40' : 'bg-indigo-400/20 text-indigo-200 border-indigo-400/40'"
+                >
+                  {{ formatSessionLabel(activeTicket.session_type) }}
                 </span>
                 <span v-if="ticketsList.length > 1" class="text-[11px] text-slate-400 font-mono">
                   #{{ selectedIndex + 1 }}/{{ ticketsList.length }}
@@ -672,10 +689,19 @@ onUnmounted(() => {
             class="card p-5 hover:border-primary-400 transition flex flex-col justify-between space-y-4"
           >
             <div>
-              <div class="flex items-center justify-between gap-2 mb-2">
-                <span class="chip chip-primary text-[10px]">
-                  Vé #{{ idx + 1 }}
-                </span>
+              <div class="flex items-center justify-between gap-2 mb-2 flex-wrap">
+                <div class="flex items-center gap-1.5">
+                  <span class="chip chip-primary text-[10px]">
+                    Vé #{{ idx + 1 }}
+                  </span>
+                  <span
+                    v-if="t.session_type && t.session_type !== 'FULL_DAY'"
+                    class="px-2 py-0.5 rounded-full border text-[10px] font-bold"
+                    :class="sessionBadgeClasses(t.session_type)"
+                  >
+                    {{ formatSessionLabel(t.session_type) }}
+                  </span>
+                </div>
 
                 <span
                   :class="t.status === 'ISSUED' ? 'chip-success' : 'chip-slate'"
@@ -756,7 +782,16 @@ onUnmounted(() => {
             class="p-3 bg-white rounded-2xl border border-amber-200/80 flex items-center justify-between gap-3 text-xs"
           >
             <div>
-              <div class="font-extrabold text-slate-900">{{ p.event_name }}</div>
+              <div class="flex items-center gap-1.5 flex-wrap">
+                <div class="font-extrabold text-slate-900">{{ p.event_name }}</div>
+                <span
+                  v-if="p.session_type && p.session_type !== 'FULL_DAY'"
+                  class="px-2 py-0.5 rounded-full border text-[10px] font-bold"
+                  :class="sessionBadgeClasses(p.session_type)"
+                >
+                  {{ formatSessionLabel(p.session_type) }}
+                </span>
+              </div>
               <div class="text-[11px] text-slate-500 mt-0.5">
                 Người giới thiệu: <strong class="text-slate-800">{{ p.referrer_name }}</strong>
               </div>

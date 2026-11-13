@@ -75,8 +75,9 @@ async function runStartupMaintenance() {
       FROM INFORMATION_SCHEMA.COLUMNS
       WHERE TABLE_SCHEMA = DATABASE()
         AND (
-          (TABLE_NAME = 'invite_links' AND COLUMN_NAME = 'legacy_token')
-          OR (TABLE_NAME = 'events' AND COLUMN_NAME IN ('registration_deadline', 'map_url', 'info_url'))
+          (TABLE_NAME = 'invite_links' AND COLUMN_NAME IN ('legacy_token', 'session_type'))
+          OR (TABLE_NAME = 'events' AND COLUMN_NAME IN ('registration_deadline', 'map_url', 'info_url', 'session_mode', 'morning_capacity', 'afternoon_capacity'))
+          OR (TABLE_NAME = 'registrations' AND COLUMN_NAME = 'session_type')
         )
     `);
     const existingCols = new Set<string>(
@@ -87,6 +88,11 @@ async function runStartupMaintenance() {
     await ensureColumnExists(conn, existingCols, 'events', 'registration_deadline', `ALTER TABLE events ADD COLUMN registration_deadline DATETIME NULL AFTER end_at`);
     await ensureColumnExists(conn, existingCols, 'events', 'map_url', `ALTER TABLE events ADD COLUMN map_url VARCHAR(500) NULL AFTER location`);
     await ensureColumnExists(conn, existingCols, 'events', 'info_url', `ALTER TABLE events ADD COLUMN info_url VARCHAR(500) NULL AFTER description`);
+    await ensureColumnExists(conn, existingCols, 'events', 'session_mode', `ALTER TABLE events ADD COLUMN session_mode ENUM('FULL_DAY', 'SPLIT_SESSIONS') NOT NULL DEFAULT 'FULL_DAY' AFTER capacity`);
+    await ensureColumnExists(conn, existingCols, 'events', 'morning_capacity', `ALTER TABLE events ADD COLUMN morning_capacity INT NULL AFTER session_mode`);
+    await ensureColumnExists(conn, existingCols, 'events', 'afternoon_capacity', `ALTER TABLE events ADD COLUMN afternoon_capacity INT NULL AFTER morning_capacity`);
+    await ensureColumnExists(conn, existingCols, 'invite_links', 'session_type', `ALTER TABLE invite_links ADD COLUMN session_type ENUM('FULL_DAY', 'MORNING', 'AFTERNOON') NOT NULL DEFAULT 'FULL_DAY' AFTER current_registrations`);
+    await ensureColumnExists(conn, existingCols, 'registrations', 'session_type', `ALTER TABLE registrations ADD COLUMN session_type ENUM('FULL_DAY', 'MORNING', 'AFTERNOON') NOT NULL DEFAULT 'FULL_DAY' AFTER address`);
 
     await conn.query(`
       UPDATE events

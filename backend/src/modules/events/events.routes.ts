@@ -16,6 +16,8 @@ router.get('/:id/stats', authenticate, requireEventCapability('can_view_report')
 router.get('/:id/report', authenticate, requireEventCapability('can_view_report'), EventsController.getReport);
 router.get('/:id/staff-quotas', authenticate, requirePermission('events:manage'), EventsController.getStaffQuotas);
 router.post('/:id/staff-quotas', authenticate, requirePermission('events:manage'), EventsController.setStaffQuota);
+router.get('/:id/invites', authenticate, requirePermission('events:manage'), EventsController.getEventInvites);
+router.post('/:id/invites', authenticate, requirePermission('events:manage'), EventsController.createEventInvite);
 router.patch('/:id/toggle-status', authenticate, requirePermission('events:manage'), EventsController.toggleEventStatus);
 router.patch('/:id/confirm-payment', authenticate, requirePermission('events:manage'), EventsController.confirmPayment);
 router.delete('/:id', authenticate, requirePermission('events:manage'), EventsController.deleteEvent);

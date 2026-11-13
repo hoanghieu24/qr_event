@@ -5,7 +5,7 @@ export class InvitesController {
   static async createInviteLink(req: Request, res: Response, next: NextFunction) {
     try {
       if (!req.user) return;
-      const { event_id, expires_in_days, max_registrations, referrer_id } = req.body;
+      const { event_id, expires_in_days, max_registrations, referrer_id, session_type } = req.body;
       if (!event_id) {
         res.status(400).json({ success: false, message: 'Vui lòng chọn sự kiện.' });
         return;
@@ -18,8 +18,9 @@ export class InvitesController {
         event_id: parseInt(event_id, 10),
         referrer_id: targetReferrerId,
         expires_in_days: expires_in_days ? parseInt(expires_in_days, 10) : 30,
-        max_registrations: max_registrations ? parseInt(max_registrations, 10) : undefined,
+        max_registrations: max_registrations !== undefined && max_registrations !== null ? parseInt(max_registrations, 10) : undefined,
         is_admin: isAdmin,
+        session_type: session_type || undefined,
       });
 
       res.status(201).json({ success: true, data: invite });
@@ -51,6 +52,10 @@ export class InvitesController {
         success: true,
         data: {
           token: invite.token,
+          session_type: invite.session_type || 'FULL_DAY',
+          session_label: invite.session_label || 'Cả ngày',
+          session_capacity: invite.session_capacity ?? invite.event_capacity,
+          current_session_registrations: Number(invite.current_session_registrations || 0),
           event: {
             id: invite.event_id,
             name: invite.event_name,
@@ -63,6 +68,9 @@ export class InvitesController {
             end_at: invite.event_end_at,
             registration_deadline: invite.event_registration_deadline,
             capacity: invite.event_capacity,
+            session_mode: invite.event_session_mode || 'FULL_DAY',
+            morning_capacity: invite.event_morning_capacity ?? null,
+            afternoon_capacity: invite.event_afternoon_capacity ?? null,
             current_registrations: Number(invite.current_event_registrations || 0),
             status: invite.event_status,
           },

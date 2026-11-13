@@ -7,6 +7,7 @@ import { ENV } from '../../config/env';
 import { sendEmail, sendEmailWithResult, shouldSendApprovedEmail } from '../../config/mailer';
 import { InvitesService } from '../invites/invites.service';
 import { Realtime } from '../../realtime/socket';
+import { getSessionLabel } from '../../utils/eventSessions';
 
 export class RegistrationsService {
   private static escapeHtml(value: string): string {
@@ -41,6 +42,7 @@ export class RegistrationsService {
     eventStartAt: any;
     ticketCode: string;
     referrerName?: string | null;
+    sessionType?: string | null;
     isAutoApproved?: boolean;
   }): Promise<{ sent: boolean; simulated: boolean; error?: string }> {
     try {
@@ -99,6 +101,7 @@ export class RegistrationsService {
 
           <div style="background-color: #f8fafc; padding: 16px; border-radius: 10px; margin: 18px 0; font-size: 14px; line-height: 1.7;">
             <div><strong>Sự kiện:</strong> ${safeEventName}</div>
+            <div><strong>Khung buổi:</strong> ${this.escapeHtml(getSessionLabel(params.sessionType))}</div>
             <div><strong>Thời gian:</strong> ${timeLabel}</div>
             <div><strong>Địa điểm:</strong> ${safeLocation}${mapHref ? ` (<a href="${this.escapeHtml(mapHref)}" style="color: #0284c7; font-weight: 600;">Xem Google Maps</a>)` : ''}</div>
             ${safeReferrer ? `<div><strong>Người giới thiệu:</strong> ${safeReferrer}</div>` : ''}
@@ -206,43 +209,67 @@ export class RegistrationsService {
     // 1. Verify invite link token (strict: ném lỗi nếu link đã hết hạn hoặc sự kiện đã đóng)
     const invite = await InvitesService.verifyInviteToken(data.token, { strict: true });
 
-    // 2. Identify or create customer account by email
+    const cleanEmail = data.email.trim().toLowerCase();
+    const cleanPhone = data.phone.trim();
+
+    // 2. Check duplicate registration by email or phone for this event BEFORE touching users table
+    const existingByEmail = await query<any[]>(
+      `SELECT id, session_type FROM registrations WHERE event_id = ? AND LOWER(email) = ? LIMIT 1`,
+      [invite.event_id, cleanEmail]
+    );
+    if (existingByEmail.length > 0) {
+      const prevSession = existingByEmail[0].session_type && existingByEmail[0].session_type !== 'FULL_DAY'
+        ? ` (${getSessionLabel(existingByEmail[0].session_type)})`
+        : '';
+      throw new Error(`Khách hàng với email này đã đăng ký tham gia sự kiện trước đó${prevSession}.`);
+    }
+
+    const existingPhone = await query<any[]>(
+      `SELECT id, session_type FROM registrations WHERE event_id = ? AND phone = ? LIMIT 1`,
+      [invite.event_id, cleanPhone]
+    );
+    if (existingPhone.length > 0) {
+      const prevSession = existingPhone[0].session_type && existingPhone[0].session_type !== 'FULL_DAY'
+        ? ` (${getSessionLabel(existingPhone[0].session_type)})`
+        : '';
+      throw new Error(`Số điện thoại này đã được đăng ký vé cho sự kiện này${prevSession}.`);
+    }
+
+    // 3. Identify or create customer account by email
     let actualCustomerId = customerId;
-    const existingUsers = await query<any[]>('SELECT id FROM users WHERE email = ?', [data.email]);
+    const existingUsers = await query<any[]>('SELECT id FROM users WHERE email = ? LIMIT 1', [cleanEmail]);
     if (existingUsers.length > 0) {
       actualCustomerId = existingUsers[0].id;
     } else {
+      const existingPhoneUser = await query<any[]>('SELECT id FROM users WHERE phone = ? LIMIT 1', [cleanPhone]);
+      if (existingPhoneUser.length > 0) {
+        throw new Error('Số điện thoại này đã được liên kết với một tài khoản khác trên hệ thống. Vui lòng sử dụng đúng email đã đăng ký.');
+      }
       const newCust: any = await query(
         `INSERT INTO users (type, name, email, phone, status) VALUES ('CUSTOMER', ?, ?, ?, 'ACTIVE')`,
-        [data.full_name, data.email, data.phone]
+        [data.full_name, cleanEmail, cleanPhone]
       );
       actualCustomerId = newCust.insertId;
     }
 
-    // 3. Check if customer already registered for this event
+    // 4. Also check if resolved customer account already registered for this event
     const existing = await query<any[]>(
-      `SELECT id, status FROM registrations WHERE event_id = ? AND customer_id = ?`,
+      `SELECT id, status, session_type FROM registrations WHERE event_id = ? AND customer_id = ?`,
       [invite.event_id, actualCustomerId]
     );
-
     if (existing.length > 0) {
-      throw new Error('Khách hàng với email này đã đăng ký tham gia sự kiện trước đó.');
+      const prevSession = existing[0].session_type && existing[0].session_type !== 'FULL_DAY'
+        ? ` (${getSessionLabel(existing[0].session_type)})`
+        : '';
+      throw new Error(`Khách hàng với email này đã đăng ký tham gia sự kiện trước đó${prevSession}.`);
     }
 
-    // Also check phone duplicate for this event
-    const existingPhone = await query<any[]>(
-      `SELECT id FROM registrations WHERE event_id = ? AND phone = ?`,
-      [invite.event_id, data.phone]
-    );
-
-    if (existingPhone.length > 0) {
-      throw new Error('Số điện thoại này đã được đăng ký vé cho sự kiện này.');
-    }
+    const sessionType = invite.session_type || 'FULL_DAY';
 
     const txResult = await withTransaction(async (conn) => {
-      // 4. Fetch event details including approval_mode, dates, and registration deadline
+      // 4. Fetch event details including approval_mode, dates, capacities, and registration deadline
       const [evRows]: any = await conn.query(
-        'SELECT approval_mode, name, location, map_url, start_at, end_at, registration_deadline, capacity, status FROM events WHERE id = ? FOR UPDATE',
+        'SELECT approval_mode, name, location, map_url, start_at, end_at, registration_deadline, capacity, session_mode, morning_capacity, afternoon_capacity, status FROM events WHERE id = ? FOR UPDATE',
         [invite.event_id]
       );
       const eventDetails = evRows[0] || {};
@@ -264,6 +291,18 @@ export class RegistrationsService {
         const [countRows]: any = await conn.query('SELECT COUNT(*) AS total FROM registrations WHERE event_id = ?', [invite.event_id]);
         if (Number(countRows[0]?.total || 0) >= Number(eventDetails.capacity)) {
           throw new Error(`Sự kiện đã đạt giới hạn khách tham gia tối đa (${eventDetails.capacity} khách). Cổng đăng ký đã đóng.`);
+        }
+      }
+      if (eventDetails.session_mode === 'SPLIT_SESSIONS' && (sessionType === 'MORNING' || sessionType === 'AFTERNOON')) {
+        const sessionCap = sessionType === 'MORNING' ? eventDetails.morning_capacity : eventDetails.afternoon_capacity;
+        if (sessionCap !== null && sessionCap !== undefined) {
+          const [sessCountRows]: any = await conn.query(
+            'SELECT COUNT(*) AS total FROM registrations WHERE event_id = ? AND session_type = ?',
+            [invite.event_id, sessionType]
+          );
+          if (Number(sessCountRows[0]?.total || 0) >= Number(sessionCap)) {
+            throw new Error(`${getSessionLabel(sessionType)} đã đạt giới hạn khách tối đa (${sessionCap} khách). Cổng đăng ký buổi này đã đóng.`);
+          }
         }
       }
       const approvalMode = eventDetails.approval_mode || 'REFERRER_ONLY';
@@ -291,8 +330,8 @@ export class RegistrationsService {
       if (approvalMode === 'AUTO') {
         const [res]: any = await conn.query(
           `INSERT INTO registrations 
-           (event_id, customer_id, invite_link_id, referrer_id, full_name, phone, email, address, status, approved_at)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'APPROVED', NOW())`,
+           (event_id, customer_id, invite_link_id, referrer_id, full_name, phone, email, address, session_type, status, approved_at)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'APPROVED', NOW())`,
           [
             invite.event_id,
             actualCustomerId,
@@ -302,6 +341,7 @@ export class RegistrationsService {
             data.phone,
             data.email,
             data.address || null,
+            sessionType,
           ]
         );
 
@@ -326,6 +366,8 @@ export class RegistrationsService {
           payload: {
             id: regId,
             status: 'APPROVED',
+            session_type: sessionType,
+            session_label: getSessionLabel(sessionType),
             ticket_id: tktRes.insertId,
             code: ticketCode,
             token: customerToken,
@@ -345,8 +387,8 @@ export class RegistrationsService {
       // Default or TWO_TIER mode: PENDING status
       const [res]: any = await conn.query(
         `INSERT INTO registrations 
-         (event_id, customer_id, invite_link_id, referrer_id, full_name, phone, email, address, status)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'PENDING')`,
+         (event_id, customer_id, invite_link_id, referrer_id, full_name, phone, email, address, session_type, status)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'PENDING')`,
         [
           invite.event_id,
           actualCustomerId,
@@ -356,6 +398,7 @@ export class RegistrationsService {
           data.phone,
           data.email,
           data.address || null,
+          sessionType,
         ]
       );
 
@@ -375,6 +418,8 @@ export class RegistrationsService {
         payload: {
           id: res.insertId,
           status: 'PENDING',
+          session_type: sessionType,
+          session_label: getSessionLabel(sessionType),
           token: customerToken,
           user: {
             id: actualCustomerId,
@@ -400,6 +445,7 @@ export class RegistrationsService {
         eventStartAt: txResult.eventStartAt,
         ticketCode: txResult.ticketCode,
         referrerName: txResult.referrerName,
+        sessionType,
         isAutoApproved: true,
       });
 
@@ -626,6 +672,7 @@ export class RegistrationsService {
           eventStartAt: reg.event_start_at,
           ticketCode,
           referrerName: reg.referrer_name,
+          sessionType: reg.session_type,
           isAutoApproved: false,
         })
       : { sent: false, simulated: false };

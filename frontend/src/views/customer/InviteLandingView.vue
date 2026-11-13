@@ -23,10 +23,13 @@ import {
   AlertTriangle,
   ExternalLink,
   Users,
-  Navigation
+  Navigation,
+  Sunrise,
+  Sunset
 } from 'lucide-vue-next';
 import api from '../../api/client';
 import { useAuthStore } from '../../stores/auth';
+import { formatSessionLabel } from '../../utils/eventSessions';
 
 const route = useRoute();
 const auth = useAuthStore();
@@ -111,11 +114,25 @@ const regDeadlineLabel = computed(() => {
   );
 });
 
+const inviteSessionType = computed(() => inviteData.value?.session_type || 'FULL_DAY');
+const inviteSessionLabel = computed(() => inviteData.value?.session_label || formatSessionLabel(inviteSessionType.value));
+const isSplitSession = computed(
+  () => event.value?.session_mode === 'SPLIT_SESSIONS' || inviteSessionType.value === 'MORNING' || inviteSessionType.value === 'AFTERNOON'
+);
+
 const isRegistrationClosed = computed(() => {
   if (inviteData.value?.is_registration_closed) return true;
   const now = new Date();
   if (endAt.value && now > endAt.value) return true;
   if (regDeadlineDate.value && now > regDeadlineDate.value) return true;
+  if (
+    isSplitSession.value &&
+    inviteData.value?.session_capacity !== undefined &&
+    inviteData.value?.session_capacity !== null &&
+    Number(inviteData.value?.current_session_registrations || 0) >= Number(inviteData.value.session_capacity)
+  ) {
+    return true;
+  }
   if (event.value?.capacity && Number(event.value?.current_registrations || 0) >= Number(event.value.capacity)) return true;
   return false;
 });
@@ -128,6 +145,14 @@ const closureReason = computed(() => {
   }
   if (regDeadlineDate.value && now > regDeadlineDate.value) {
     return `Đã hết thời hạn đăng ký (Hạn chót: ${regDeadlineLabel.value}).`;
+  }
+  if (
+    isSplitSession.value &&
+    inviteData.value?.session_capacity !== undefined &&
+    inviteData.value?.session_capacity !== null &&
+    Number(inviteData.value?.current_session_registrations || 0) >= Number(inviteData.value.session_capacity)
+  ) {
+    return `${inviteSessionLabel.value} đã đạt số lượng khách tối đa (Đã hết chỗ).`;
   }
   if (event.value?.capacity && Number(event.value?.current_registrations || 0) >= Number(event.value.capacity)) {
     return 'Sự kiện đã đạt số lượng khách tối đa (Đã hết chỗ).';
@@ -146,6 +171,25 @@ const googleMapsUrl = computed(() => {
 const infoUrl = computed(() => event.value.info_url || '');
 
 const spotsInfo = computed(() => {
+  if (
+    isSplitSession.value &&
+    inviteData.value?.session_capacity !== undefined &&
+    inviteData.value?.session_capacity !== null
+  ) {
+    const total = Number(inviteData.value.session_capacity);
+    const current = Number(inviteData.value.current_session_registrations || 0);
+    const sessionRemaining = Math.max(0, total - current);
+    const eventRemaining = event.value?.capacity
+      ? Math.max(0, Number(event.value.capacity) - Number(event.value.current_registrations || 0))
+      : sessionRemaining;
+    const remaining = Math.min(sessionRemaining, eventRemaining);
+    return {
+      total,
+      current,
+      remaining,
+      isFull: remaining === 0,
+    };
+  }
   if (!event.value.capacity) return null;
   const total = Number(event.value.capacity);
   const current = Number(event.value.current_registrations || 0);
@@ -357,9 +401,20 @@ const handleSubmitRegistration = async () => {
                 <span class="inline-flex items-center gap-1.5 rounded-full bg-white/20 px-3 py-1 text-xs font-semibold text-white ring-1 ring-white/30 backdrop-blur-md">
                   <img src="/icon.png" alt="EventGo" class="h-4 w-4 rounded-sm object-contain" /> EventGo
                 </span>
-                <span class="inline-flex items-center gap-1.5 rounded-full bg-emerald-500/90 px-3 py-1.5 text-xs font-semibold text-white backdrop-blur-md">
-                  <ShieldCheck class="h-3.5 w-3.5" /> Thư mời chính thức
-                </span>
+                <div class="flex items-center gap-1.5 flex-wrap justify-end">
+                  <span
+                    v-if="isSplitSession"
+                    class="inline-flex items-center gap-1.5 rounded-full px-3 py-1.5 text-xs font-bold backdrop-blur-md border"
+                    :class="inviteSessionType === 'MORNING' ? 'bg-amber-400/95 text-slate-950 border-amber-200' : 'bg-indigo-500/95 text-white border-indigo-300/60'"
+                  >
+                    <Sunrise v-if="inviteSessionType === 'MORNING'" class="h-3.5 w-3.5" />
+                    <Sunset v-else class="h-3.5 w-3.5" />
+                    Khung giờ: {{ inviteSessionLabel }}
+                  </span>
+                  <span class="inline-flex items-center gap-1.5 rounded-full bg-emerald-500/90 px-3 py-1.5 text-xs font-semibold text-white backdrop-blur-md">
+                    <ShieldCheck class="h-3.5 w-3.5" /> Thư mời chính thức
+                  </span>
+                </div>
               </div>
               <div class="absolute inset-x-0 bottom-0 p-5 sm:p-8">
                 <h1 class="text-2xl font-extrabold leading-tight tracking-tight text-white sm:text-4xl">{{ event.name }}</h1>
@@ -453,7 +508,7 @@ const handleSubmitRegistration = async () => {
                 <div v-if="spotsInfo" class="flex items-start gap-3">
                   <span class="grid h-9 w-9 shrink-0 place-items-center rounded-xl bg-sky-50 text-sky-600"><Users class="h-4 w-4" /></span>
                   <div class="min-w-0 text-xs">
-                    <div class="font-bold text-slate-600">Hạn mức tham dự:</div>
+                    <div class="font-bold text-slate-600">Hạn mức {{ isSplitSession ? inviteSessionLabel : 'tham dự' }}:</div>
                     <div class="font-semibold text-slate-900 mt-0.5">
                       {{ spotsInfo.current }} / {{ spotsInfo.total }} khách
                       <span :class="spotsInfo.isFull ? 'text-rose-600 font-bold' : 'text-emerald-600 font-bold'">

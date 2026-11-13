@@ -1,6 +1,15 @@
 import { query } from '../../config/database';
 import { uploadImageToCloudinary } from '../../config/cloudinary';
 import { Realtime } from '../../realtime/socket';
+import { ENV } from '../../config/env';
+import { InvitesService } from '../invites/invites.service';
+import {
+  ensureEventSessionInvites,
+  InviteSessionType,
+  listEventInvitesDetailed,
+  normalizeSessionConfig,
+  syncEventSessionInvitesOnUpdate,
+} from '../../utils/eventSessions';
 
 export class EventsService {
   static async listEvents(options?: { staffId?: number; tenantId?: number; scope?: string }) {
@@ -88,7 +97,7 @@ export class EventsService {
     const newStatus = currentStatus === 'PUBLISHED' ? 'CLOSED' : 'PUBLISHED';
     await query('UPDATE events SET status = ? WHERE id = ?', [newStatus, id]);
     if (newStatus === 'PUBLISHED') {
-      await query("UPDATE invite_links SET status = 'ACTIVE' WHERE event_id = ?", [id]);
+      await syncEventSessionInvitesOnUpdate(id);
     } else {
       await query("UPDATE invite_links SET status = 'CLOSED' WHERE event_id = ? AND status = 'ACTIVE'", [id]);
     }
@@ -129,6 +138,9 @@ export class EventsService {
     end_at: string;
     registration_deadline?: string | null;
     capacity?: number;
+    session_mode?: string;
+    morning_capacity?: number | null;
+    afternoon_capacity?: number | null;
     approval_mode?: 'REFERRER_ONLY' | 'TWO_TIER' | 'AUTO';
     latitude?: number;
     longitude?: number;
@@ -182,10 +194,16 @@ export class EventsService {
 
     const paymentStatus = data.payment_status || (isTrial || packagePriceVnd === 0 ? 'PAID' : 'PENDING_PAYMENT');
     const paidAt = paymentStatus === 'PAID' ? new Date() : null;
+    const sessionCfg = normalizeSessionConfig({
+      capacity,
+      session_mode: data.session_mode,
+      morning_capacity: data.morning_capacity,
+      afternoon_capacity: data.afternoon_capacity,
+    });
 
     const res: any = await query(
-      `INSERT INTO events (name, description, location, map_url, info_url, poster_url, start_at, end_at, registration_deadline, capacity, approval_mode, latitude, longitude, geofence_radius_meters, geofence_enabled, status, created_by, tenant_id, package_name, max_employees, max_referrers, max_scanners, package_price_vnd, is_trial, payment_status, payment_note, paid_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'PUBLISHED', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      `INSERT INTO events (name, description, location, map_url, info_url, poster_url, start_at, end_at, registration_deadline, capacity, session_mode, morning_capacity, afternoon_capacity, approval_mode, latitude, longitude, geofence_radius_meters, geofence_enabled, status, created_by, tenant_id, package_name, max_employees, max_referrers, max_scanners, package_price_vnd, is_trial, payment_status, payment_note, paid_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'PUBLISHED', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       [
         data.name,
         data.description || null,
@@ -197,6 +215,9 @@ export class EventsService {
         data.end_at,
         data.registration_deadline || null,
         capacity,
+        sessionCfg.session_mode,
+        sessionCfg.morning_capacity,
+        sessionCfg.afternoon_capacity,
         data.approval_mode || 'REFERRER_ONLY',
         data.latitude || null,
         data.longitude || null,
@@ -257,11 +278,27 @@ export class EventsService {
       }
     }
 
+    try {
+      await ensureEventSessionInvites(eventId, data.created_by);
+    } catch (invErr) {
+      console.warn('[Events] Auto create session invite links failed:', invErr);
+    }
+
+    const invites = (await listEventInvitesDetailed(eventId, data.created_by)).map((r) => ({
+      ...r,
+      url: `${ENV.FRONTEND_URL}/invite/${r.token}`,
+      invite_url: `${ENV.FRONTEND_URL}/invite/${r.token}`,
+    }));
+
     Realtime.emitDashboardRefresh();
     return {
       id: eventId,
       ...data,
       capacity,
+      session_mode: sessionCfg.session_mode,
+      morning_capacity: sessionCfg.morning_capacity,
+      afternoon_capacity: sessionCfg.afternoon_capacity,
+      invites,
       package_name: packageName,
       package_price_vnd: packagePriceVnd,
       payment_status: paymentStatus,
@@ -278,6 +315,13 @@ export class EventsService {
   }
 
   static async updateEvent(id: number, data: any) {
+    const existingRows = await query<any[]>(
+      'SELECT id, capacity, session_mode, morning_capacity, afternoon_capacity, tenant_id, status FROM events WHERE id = ? LIMIT 1',
+      [id]
+    );
+    if (!existingRows.length) throw new Error('Sự kiện không tồn tại.');
+    const existing = existingRows[0];
+
     const fields: string[] = [];
     const values: any[] = [];
 
@@ -289,13 +333,52 @@ export class EventsService {
     if (data.start_at) { fields.push('start_at = ?'); values.push(data.start_at); }
     if (data.end_at) { fields.push('end_at = ?'); values.push(data.end_at); }
     if (data.registration_deadline !== undefined) { fields.push('registration_deadline = ?'); values.push(data.registration_deadline || null); }
-    if (data.capacity) { fields.push('capacity = ?'); values.push(data.capacity); }
+
+    let shouldSyncInvites = false;
+    if (
+      data.capacity !== undefined ||
+      data.session_mode !== undefined ||
+      data.morning_capacity !== undefined ||
+      data.afternoon_capacity !== undefined
+    ) {
+      const nextCapacity =
+        data.capacity !== undefined && data.capacity !== null && data.capacity !== ''
+          ? Number(data.capacity)
+          : Number(existing.capacity);
+      const nextSessionCfg = normalizeSessionConfig({
+        capacity: nextCapacity,
+        session_mode: data.session_mode ?? existing.session_mode,
+        morning_capacity:
+          data.morning_capacity !== undefined
+            ? data.morning_capacity
+            : data.session_mode === 'FULL_DAY'
+            ? null
+            : existing.morning_capacity,
+        afternoon_capacity:
+          data.afternoon_capacity !== undefined
+            ? data.afternoon_capacity
+            : data.session_mode === 'FULL_DAY'
+            ? null
+            : existing.afternoon_capacity,
+      });
+      if (data.capacity !== undefined && data.capacity !== null && data.capacity !== '') {
+        fields.push('capacity = ?');
+        values.push(nextCapacity);
+      }
+      fields.push('session_mode = ?');
+      values.push(nextSessionCfg.session_mode);
+      fields.push('morning_capacity = ?');
+      values.push(nextSessionCfg.morning_capacity);
+      fields.push('afternoon_capacity = ?');
+      values.push(nextSessionCfg.afternoon_capacity);
+      shouldSyncInvites = true;
+    }
+
     if (data.approval_mode) { fields.push('approval_mode = ?'); values.push(data.approval_mode); }
-    if (data.status) { fields.push('status = ?'); values.push(data.status); }
+    if (data.status) { fields.push('status = ?'); values.push(data.status); shouldSyncInvites = true; }
     if (data.tenant_id) throw new Error('Sự kiện của khách thuê cần được tạo trong cổng quản lý khách thuê để áp dụng hạn mức.');
     if (data.tenant_id === null) {
-      const current = await query<any[]>('SELECT tenant_id FROM events WHERE id = ? LIMIT 1', [id]);
-      if (current[0]?.tenant_id) throw new Error('Không thể tách sự kiện của khách thuê khỏi đơn vị quản lý. Hãy đóng sự kiện để lưu lịch sử.');
+      if (existing.tenant_id) throw new Error('Không thể tách sự kiện của khách thuê khỏi đơn vị quản lý. Hãy đóng sự kiện để lưu lịch sử.');
       fields.push('tenant_id = ?'); values.push(null);
     }
     if (data.latitude !== undefined) { fields.push('latitude = ?'); values.push(data.latitude || null); }
@@ -312,7 +395,36 @@ export class EventsService {
 
     values.push(id);
     await query(`UPDATE events SET ${fields.join(', ')} WHERE id = ?`, values);
+    if (shouldSyncInvites) {
+      await syncEventSessionInvitesOnUpdate(id);
+    }
+    Realtime.emitDashboardRefresh();
     return { success: true, message: 'Cập nhật sự kiện thành công.' };
+  }
+
+  static async listEventInvites(eventId: number, adminUserId?: number) {
+    const rows = await listEventInvitesDetailed(eventId, adminUserId);
+    return rows.map((r) => ({
+      ...r,
+      url: `${ENV.FRONTEND_URL}/invite/${r.token}`,
+      invite_url: `${ENV.FRONTEND_URL}/invite/${r.token}`,
+    }));
+  }
+
+  static async createEventInvite(
+    eventId: number,
+    data: { referrer_id?: number; max_registrations?: number; expires_in_days?: number; session_type?: InviteSessionType },
+    adminUserId: number
+  ) {
+    const referrerId = data.referrer_id ? Number(data.referrer_id) : adminUserId;
+    return await InvitesService.createInviteLink({
+      event_id: eventId,
+      referrer_id: referrerId,
+      expires_in_days: data.expires_in_days ? Number(data.expires_in_days) : 60,
+      max_registrations: data.max_registrations !== undefined ? Number(data.max_registrations) : undefined,
+      is_admin: true,
+      session_type: data.session_type,
+    });
   }
 
   static async getEventStats(eventId: number) {
@@ -339,6 +451,7 @@ export class EventsService {
         r.phone,
         r.email,
         r.address,
+        r.session_type,
         r.status as registration_status,
         r.created_at as registered_at,
         r.approved_at,

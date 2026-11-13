@@ -5,6 +5,13 @@ import { uploadImageToCloudinary } from '../../config/cloudinary';
 import { Realtime } from '../../realtime/socket';
 import { ENV } from '../../config/env';
 import { InvitesService } from '../invites/invites.service';
+import {
+  ensureEventSessionInvites,
+  InviteSessionType,
+  listEventInvitesDetailed,
+  normalizeSessionConfig,
+  syncEventSessionInvitesOnUpdate,
+} from '../../utils/eventSessions';
 
 const FREE_EVENT_LIMIT = 3;
 
@@ -334,6 +341,9 @@ export class TenantsService {
     name: string; description?: string; location: string; poster_base64?: string;
     map_url?: string; info_url?: string; registration_deadline?: string | null;
     start_at: string; end_at: string; capacity?: number;
+    session_mode?: string;
+    morning_capacity?: number | null;
+    afternoon_capacity?: number | null;
     event_package_id?: number | string;
     plan_id?: number | string;
     approval_mode?: 'REFERRER_ONLY' | 'TWO_TIER' | 'AUTO';
@@ -435,17 +445,26 @@ export class TenantsService {
         finalCapacity = reqCap;
       }
 
+      const sessionCfg = normalizeSessionConfig({
+        capacity: finalCapacity,
+        session_mode: data.session_mode,
+        morning_capacity: data.morning_capacity,
+        afternoon_capacity: data.afternoon_capacity,
+      });
+
       const paidAt = paymentStatus === 'PAID' ? new Date() : null;
 
       const [result]: any = await conn.query(`
         INSERT INTO events (name, description, location, map_url, info_url, poster_url, start_at, end_at, registration_deadline, capacity,
+          session_mode, morning_capacity, afternoon_capacity,
           approval_mode, status, created_by, tenant_id, package_request_id, package_name,
           max_employees, max_referrers, max_scanners, package_price_vnd, is_trial, payment_status, paid_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'PUBLISHED', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'PUBLISHED', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       `, [
         data.name, data.description || null, data.location, data.map_url || null, data.info_url || null,
         posterUrl, data.start_at, data.end_at, data.registration_deadline || null,
-        finalCapacity, data.approval_mode || 'REFERRER_ONLY', userId, tenantId,
+        finalCapacity, sessionCfg.session_mode, sessionCfg.morning_capacity, sessionCfg.afternoon_capacity,
+        data.approval_mode || 'REFERRER_ONLY', userId, tenantId,
         packageRequestId, packageInfo.name, packageInfo.max_employees, packageInfo.max_referrers,
         packageInfo.max_scanners, packageInfo.price_vnd, quotaSource === 'FREE' ? 1 : 0,
         paymentStatus, paidAt
@@ -506,6 +525,10 @@ export class TenantsService {
 
       return {
         id: eventId,
+        capacity: finalCapacity,
+        session_mode: sessionCfg.session_mode,
+        morning_capacity: sessionCfg.morning_capacity,
+        afternoon_capacity: sessionCfg.afternoon_capacity,
         quota_source: quotaSource,
         package: packageInfo,
         payment_status: paymentStatus,
@@ -516,15 +539,15 @@ export class TenantsService {
 
     Realtime.emitDashboardRefresh();
 
-    // Tu dong tao truoc 1 link moi chinh thuc mac dinh
+    // Tự động tạo link mời chính thức theo chế độ buổi (Cả ngày: 1 link | Chia buổi: 2 link Sáng & Chiều)
+    let invites: any[] = [];
     try {
-      await InvitesService.createInviteLink({
-        event_id: created.id,
-        referrer_id: userId,
-        expires_in_days: 60,
-        max_registrations: created.package?.max_attendees || 1000,
-        is_admin: true,
-      });
+      await ensureEventSessionInvites(created.id, userId);
+      invites = (await listEventInvitesDetailed(created.id, userId)).map((r) => ({
+        ...r,
+        url: `${ENV.FRONTEND_URL}/invite/${r.token}`,
+        invite_url: `${ENV.FRONTEND_URL}/invite/${r.token}`,
+      }));
     } catch (invErr) {
       console.warn('Auto create default invite on event creation error:', invErr);
     }
@@ -536,7 +559,11 @@ export class TenantsService {
       location: data.location,
       start_at: data.start_at,
       end_at: data.end_at,
-      capacity: data.capacity || created.package.max_attendees,
+      capacity: created.capacity || data.capacity || created.package.max_attendees,
+      session_mode: created.session_mode,
+      morning_capacity: created.morning_capacity,
+      afternoon_capacity: created.afternoon_capacity,
+      invites,
       poster_url: posterUrl,
       package_name: created.package.name,
       max_employees: created.package.max_employees,
@@ -560,7 +587,7 @@ export class TenantsService {
   static async reopenEvent(tenantId: number, eventId: number) {
     await this.requireTenantEvent(tenantId, eventId);
     await query("UPDATE events SET status = 'PUBLISHED' WHERE id = ? AND tenant_id = ?", [eventId, tenantId]);
-    await query("UPDATE invite_links SET status = 'ACTIVE' WHERE event_id = ?", [eventId]);
+    await syncEventSessionInvitesOnUpdate(eventId);
     Realtime.emitDashboardRefresh();
     return { success: true, status: 'PUBLISHED' };
   }
@@ -575,10 +602,13 @@ export class TenantsService {
     end_at?: string;
     registration_deadline?: string | null;
     capacity?: number;
+    session_mode?: string;
+    morning_capacity?: number | null;
+    afternoon_capacity?: number | null;
     approval_mode?: string;
   }) {
     await this.requireTenantEvent(tenantId, eventId);
-    const [events]: any = await query(`
+    const eventRows = await query<any[]>(`
       SELECT e.*, COALESCE(sr.max_attendees, sp.max_attendees, 500) AS max_package_capacity
       FROM events e
       LEFT JOIN subscription_requests sr ON sr.id = e.package_request_id
@@ -586,8 +616,8 @@ export class TenantsService {
       WHERE e.id = ? AND e.tenant_id = ?
       LIMIT 1
     `, [eventId, tenantId]);
-    if (!events.length) throw new Error('Không tìm thấy sự kiện.');
-    const event = events[0];
+    if (!eventRows.length) throw new Error('Không tìm thấy sự kiện.');
+    const event = eventRows[0];
 
     const fields: string[] = [];
     const values: any[] = [];
@@ -600,19 +630,58 @@ export class TenantsService {
     if (data.end_at) { fields.push('end_at = ?'); values.push(data.end_at); }
     if (data.registration_deadline !== undefined) { fields.push('registration_deadline = ?'); values.push(data.registration_deadline || null); }
     if (data.approval_mode) { fields.push('approval_mode = ?'); values.push(data.approval_mode); }
-    if (data.capacity) {
-      const cap = Number(data.capacity);
+
+    let shouldSyncInvites = false;
+    if (
+      data.capacity !== undefined ||
+      data.session_mode !== undefined ||
+      data.morning_capacity !== undefined ||
+      data.afternoon_capacity !== undefined
+    ) {
+      const cap =
+        data.capacity !== undefined && data.capacity !== null && String(data.capacity) !== ''
+          ? Number(data.capacity)
+          : Number(event.capacity);
       if (cap < 1) throw new Error('Sức chứa tối thiểu là 1 khách.');
       const maxAllowed = event.max_package_capacity || 500;
       if (cap > maxAllowed) {
         throw new Error(`Sức chứa tối đa không được vượt quá giới hạn của gói (${maxAllowed} khách).`);
       }
-      fields.push('capacity = ?');
-      values.push(cap);
+      const nextSessionCfg = normalizeSessionConfig({
+        capacity: cap,
+        session_mode: data.session_mode ?? event.session_mode,
+        morning_capacity:
+          data.morning_capacity !== undefined
+            ? data.morning_capacity
+            : data.session_mode === 'FULL_DAY'
+            ? null
+            : event.morning_capacity,
+        afternoon_capacity:
+          data.afternoon_capacity !== undefined
+            ? data.afternoon_capacity
+            : data.session_mode === 'FULL_DAY'
+            ? null
+            : event.afternoon_capacity,
+      });
+      if (data.capacity !== undefined && data.capacity !== null && String(data.capacity) !== '') {
+        fields.push('capacity = ?');
+        values.push(cap);
+      }
+      fields.push('session_mode = ?');
+      values.push(nextSessionCfg.session_mode);
+      fields.push('morning_capacity = ?');
+      values.push(nextSessionCfg.morning_capacity);
+      fields.push('afternoon_capacity = ?');
+      values.push(nextSessionCfg.afternoon_capacity);
+      shouldSyncInvites = true;
     }
+
     if (!fields.length) return { success: true };
     values.push(eventId, tenantId);
     await query(`UPDATE events SET ${fields.join(', ')} WHERE id = ? AND tenant_id = ?`, values);
+    if (shouldSyncInvites) {
+      await syncEventSessionInvitesOnUpdate(eventId);
+    }
     Realtime.emitDashboardRefresh();
     return { success: true, message: 'Cập nhật sự kiện thành công.' };
   }
@@ -620,7 +689,7 @@ export class TenantsService {
   static async getAttendees(tenantId: number, eventId: number) {
     await this.requireTenantEvent(tenantId, eventId);
     return await query<any[]>(`
-      SELECT r.id AS registration_id, r.full_name, r.phone, r.email, r.address,
+      SELECT r.id AS registration_id, r.full_name, r.phone, r.email, r.address, r.session_type,
              r.status AS registration_status, r.created_at AS registered_at, r.approved_at,
              t.code AS ticket_code, t.status AS ticket_status, t.used_at AS checked_in_at,
              u.name AS referrer_name
@@ -848,77 +917,7 @@ export class TenantsService {
 
   static async listEventInvites(tenantId: number, eventId: number, adminUserId?: number) {
     await this.requireTenantEvent(tenantId, eventId);
-    let rows = await query<any[]>(`
-      SELECT il.*, COALESCE(u.name, 'Ban Tổ Chức') AS referrer_name, u.email AS referrer_email,
-             (SELECT COUNT(*) FROM registrations r WHERE r.invite_link_id = il.id) AS total_registered,
-             (SELECT COUNT(*) FROM registrations r WHERE r.invite_link_id = il.id AND r.status = 'APPROVED') AS total_approved,
-             (SELECT COUNT(*) FROM registrations r WHERE r.invite_link_id = il.id AND r.ticket_status = 'USED') AS total_checked_in
-      FROM invite_links il
-      LEFT JOIN users u ON il.referrer_id = u.id
-      WHERE il.event_id = ?
-      ORDER BY il.id DESC
-    `, [eventId]);
-
-    // Nếu chưa có link mời nào ở trạng thái ACTIVE, tự động tạo ngay 1 link chính thức
-    let hasActive = rows.some((r) => r.status === 'ACTIVE');
-    if (!hasActive) {
-      try {
-        let refId: number = Number(adminUserId || 0);
-        if (!refId) {
-          const tenantOwners = await query<any[]>(
-            "SELECT tu.user_id FROM tenant_users tu WHERE tu.tenant_id = ? AND tu.role = 'OWNER' LIMIT 1",
-            [tenantId]
-          );
-          refId = tenantOwners[0]?.user_id ? Number(tenantOwners[0].user_id) : 0;
-        }
-        if (!refId) {
-          const evRows = await query<any[]>('SELECT created_by FROM events WHERE id = ? LIMIT 1', [eventId]);
-          refId = evRows[0]?.created_by ? Number(evRows[0].created_by) : 1;
-        }
-
-        const newLink = await InvitesService.createInviteLink({
-          event_id: eventId,
-          referrer_id: refId,
-          expires_in_days: 60,
-          max_registrations: 1000,
-          is_admin: true,
-        });
-
-        const userRows = await query<any[]>('SELECT name, email FROM users WHERE id = ? LIMIT 1', [refId]);
-        const newRow = {
-          ...newLink,
-          referrer_name: userRows[0]?.name || 'Ban Tổ Chức',
-          referrer_email: userRows[0]?.email || '',
-          total_registered: 0,
-          total_approved: 0,
-          total_checked_in: 0,
-          status: 'ACTIVE',
-        };
-        rows.unshift(newRow);
-      } catch (err) {
-        console.warn('Auto create default invite link in listEventInvites error:', err);
-      }
-    }
-
-    // Tự động rút gọn link cũ nếu dài hơn 12 ký tự hoặc có tiền tố inv_
-    for (const r of rows) {
-      if (r.token && (r.token.length > 12 || r.token.startsWith('inv_')) && r.status === 'ACTIVE') {
-        try {
-          const shortToken = await InvitesService.generateUniqueShortToken();
-          const newSig = InvitesService.generateSignature(r.event_id, r.referrer_id, shortToken);
-          await query(
-            'UPDATE invite_links SET legacy_token = COALESCE(legacy_token, token), token = ?, signature = ? WHERE id = ?',
-            [shortToken, newSig, r.id]
-          );
-          r.legacy_token = r.legacy_token || r.token;
-          r.token = shortToken;
-          r.signature = newSig;
-        } catch (e) {
-          console.warn('Auto shorten link error:', e);
-        }
-      }
-    }
-
+    const rows = await listEventInvitesDetailed(eventId, adminUserId);
     return rows.map((r) => ({
       ...r,
       url: `${ENV.FRONTEND_URL}/invite/${r.token}`,
@@ -930,6 +929,7 @@ export class TenantsService {
     referrer_id?: number;
     max_registrations?: number;
     expires_in_days?: number;
+    session_type?: InviteSessionType;
   }, adminUserId: number) {
     await this.requireTenantEvent(tenantId, eventId);
     const referrerId = data.referrer_id ? Number(data.referrer_id) : adminUserId;
@@ -937,8 +937,9 @@ export class TenantsService {
       event_id: eventId,
       referrer_id: referrerId,
       expires_in_days: data.expires_in_days ? Number(data.expires_in_days) : 60,
-      max_registrations: data.max_registrations ? Number(data.max_registrations) : 1000,
+      max_registrations: data.max_registrations !== undefined ? Number(data.max_registrations) : 1000,
       is_admin: true,
+      session_type: data.session_type,
     });
   }
 

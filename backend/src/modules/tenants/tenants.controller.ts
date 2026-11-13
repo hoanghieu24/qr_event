@@ -126,7 +126,7 @@ export class TenantsController {
 
   static async createEvent(req: Request, res: Response) {
     try {
-      const { name, description, location, poster_base64, start_at, end_at, capacity, approval_mode, event_package_id, plan_id, staff_assignments } = req.body;
+      const { name, description, location, map_url, info_url, poster_base64, start_at, end_at, registration_deadline, capacity, session_mode, morning_capacity, afternoon_capacity, approval_mode, event_package_id, plan_id, staff_assignments } = req.body;
       if (![name, location, start_at, end_at].every((value) => typeof value === 'string' && value.trim())) {
         res.status(400).json({ success: false, message: 'Vui lòng nhập tên, địa điểm, thời gian bắt đầu và kết thúc.' });
         return;
@@ -136,9 +136,23 @@ export class TenantsController {
         return;
       }
       const event = await TenantsService.createEvent(Number(req.user!.tenantId), req.user!.id, {
-        name: name.trim(), description: description?.trim(), location: location.trim(), poster_base64,
-        start_at, end_at, capacity: Number(capacity) > 0 ? Number(capacity) : undefined,
-        event_package_id: event_package_id || undefined, plan_id: plan_id || undefined, approval_mode, staff_assignments,
+        name: name.trim(),
+        description: description?.trim(),
+        location: location.trim(),
+        map_url: map_url?.trim(),
+        info_url: info_url?.trim(),
+        poster_base64,
+        start_at,
+        end_at,
+        registration_deadline: registration_deadline || null,
+        capacity: Number(capacity) > 0 ? Number(capacity) : undefined,
+        session_mode,
+        morning_capacity: morning_capacity !== undefined && morning_capacity !== null && morning_capacity !== '' ? Number(morning_capacity) : undefined,
+        afternoon_capacity: afternoon_capacity !== undefined && afternoon_capacity !== null && afternoon_capacity !== '' ? Number(afternoon_capacity) : undefined,
+        event_package_id: event_package_id || undefined,
+        plan_id: plan_id || undefined,
+        approval_mode,
+        staff_assignments,
       });
       res.status(201).json({ success: true, data: event });
     } catch (error: any) {

@@ -8,7 +8,7 @@ export class TicketsService {
       SELECT t.id, t.code, t.status, t.used_at, t.created_at,
              e.id as event_id, e.name as event_name, e.location as event_location,
              e.start_at as event_start_at, e.end_at as event_end_at, e.poster_url as event_poster,
-             r.full_name, r.phone, r.email,
+             r.full_name, r.phone, r.email, r.session_type,
              u_ref.name as referrer_name
       FROM tickets t
       JOIN registrations r ON t.registration_id = r.id
@@ -54,7 +54,7 @@ export class TicketsService {
       SELECT t.id, t.code, t.status, t.used_at, t.created_at,
              e.id as event_id, e.name as event_name, e.location as event_location,
              e.start_at as event_start_at, e.end_at as event_end_at, e.poster_url as event_poster,
-             r.id as registration_id, r.full_name, r.phone, r.email,
+             r.id as registration_id, r.full_name, r.phone, r.email, r.session_type,
              u_ref.name as referrer_name, u_ref.phone as referrer_phone
       FROM tickets t
       JOIN registrations r ON t.registration_id = r.id
@@ -85,7 +85,7 @@ export class TicketsService {
 
     // Also get registrations without ticket (e.g. PENDING, PENDING_ADMIN)
     const pendingSql = `
-      SELECT r.id as registration_id, r.status as registration_status, r.created_at,
+      SELECT r.id as registration_id, r.status as registration_status, r.session_type, r.created_at,
              e.id as event_id, e.name as event_name, e.location as event_location,
              e.start_at as event_start_at, e.end_at as event_end_at,
              u_ref.name as referrer_name, u_ref.phone as referrer_phone

@@ -3,6 +3,14 @@ import { ref, computed, onMounted, onUnmounted } from 'vue';
 import api from '../../api/client';
 import { getSocket } from '../../api/socket';
 import InviteCardModal from '../../components/InviteCardModal.vue';
+import SessionAllocationField from '../../components/SessionAllocationField.vue';
+import AdminEventInvitesModal from '../../components/AdminEventInvitesModal.vue';
+import {
+  formatSessionLabel,
+  sessionBadgeClasses,
+  splitDefaultCapacities,
+  validateSessionForm,
+} from '../../utils/eventSessions';
 import {
   BarChart3,
   Users,
@@ -51,7 +59,8 @@ import {
   Phone,
   UserPlus,
   Briefcase,
-  Pencil
+  Pencil,
+  Link2
 } from 'lucide-vue-next';
 
 const activeTab = ref<'overview' | 'users' | 'staff' | 'events' | 'settings'>('overview');
@@ -170,6 +179,9 @@ const newEvent = ref({
   start_at: '2026-10-15T08:30',
   end_at: '2026-10-15T17:30',
   capacity: 500,
+  session_mode: 'FULL_DAY' as 'FULL_DAY' | 'SPLIT_SESSIONS',
+  morning_capacity: 250 as number | null,
+  afternoon_capacity: 250 as number | null,
   approval_mode: 'REFERRER_ONLY' as 'REFERRER_ONLY' | 'TWO_TIER' | 'AUTO',
   latitude: null as number | null,
   longitude: null as number | null,
@@ -179,6 +191,31 @@ const newEvent = ref({
   plan_id: null as number | null,
   payment_status: 'PAID' as 'PAID' | 'PENDING_PAYMENT',
 });
+
+const showEventInvitesModal = ref(false);
+const invitesModalEvent = ref<any>(null);
+
+const openEventInvitesModal = (ev: any) => {
+  invitesModalEvent.value = ev;
+  showEventInvitesModal.value = true;
+};
+
+const openAdminInviteCardFromLink = (payload: { event: any; inviteUrl: string; sessionType: string }) => {
+  const sessionSuffix =
+    payload.sessionType && payload.sessionType !== 'FULL_DAY'
+      ? ` (${formatSessionLabel(payload.sessionType)})`
+      : '';
+  adminCardData.value = {
+    attendee_name: 'Ông / Bà [Khách Mời VIP]',
+    attendee_role: `Khách Mời Danh Dự${sessionSuffix}`,
+    event_name: payload.event?.name,
+    event_location: payload.event?.location,
+    event_start_at: payload.event?.start_at,
+    qr_data: payload.inviteUrl || window.location.origin,
+    code_label: `QUÉT ĐỂ ĐĂNG KÝ${sessionSuffix.toUpperCase()}`,
+  };
+  showAdminInviteCardModal.value = true;
+};
 
 const eventFilterScope = ref<'ALL' | 'TENANT' | 'INTERNAL'>('ALL');
 const tenantUsersDraft = ref<any[]>([]);
@@ -224,6 +261,9 @@ const onPlanSelected = () => {
   const plan = availablePlans.value.find((p: any) => p.id === newEvent.value.plan_id);
   if (plan) {
     newEvent.value.capacity = plan.max_attendees;
+    const split = splitDefaultCapacities(plan.max_attendees);
+    newEvent.value.morning_capacity = split.morning;
+    newEvent.value.afternoon_capacity = split.afternoon;
     newEvent.value.payment_status = (plan.is_trial || plan.price_vnd === 0) ? 'PAID' : 'PENDING_PAYMENT';
   }
 };
@@ -247,6 +287,9 @@ const adminEditEventForm = ref({
   start_at: '',
   end_at: '',
   capacity: 500,
+  session_mode: 'FULL_DAY' as 'FULL_DAY' | 'SPLIT_SESSIONS',
+  morning_capacity: 250 as number | null,
+  afternoon_capacity: 250 as number | null,
   description: '',
   approval_mode: 'REFERRER_ONLY'
 });
@@ -259,13 +302,18 @@ const openAdminEditEventModal = (ev: any) => {
     const date = new Date(d);
     return isNaN(date.getTime()) ? '' : new Date(date.getTime() - date.getTimezoneOffset() * 60000).toISOString().slice(0, 16);
   };
+  const cap = Number(ev.capacity || 500);
+  const defaultSplit = splitDefaultCapacities(cap);
   adminEditEventForm.value = {
     id: ev.id,
     name: ev.name || '',
     location: ev.location || '',
     start_at: toInputDate(ev.start_at),
     end_at: toInputDate(ev.end_at),
-    capacity: ev.capacity || 500,
+    capacity: cap,
+    session_mode: ev.session_mode === 'SPLIT_SESSIONS' ? 'SPLIT_SESSIONS' : 'FULL_DAY',
+    morning_capacity: ev.morning_capacity !== null && ev.morning_capacity !== undefined ? Number(ev.morning_capacity) : defaultSplit.morning,
+    afternoon_capacity: ev.afternoon_capacity !== null && ev.afternoon_capacity !== undefined ? Number(ev.afternoon_capacity) : defaultSplit.afternoon,
     description: ev.description || '',
     approval_mode: ev.approval_mode || 'REFERRER_ONLY'
   };
@@ -277,6 +325,16 @@ const saveAdminEditEvent = async () => {
     alert('Vui lòng điền tên và địa điểm sự kiện.');
     return;
   }
+  const sessionErr = validateSessionForm({
+    sessionMode: adminEditEventForm.value.session_mode,
+    capacity: Number(adminEditEventForm.value.capacity),
+    morningCapacity: adminEditEventForm.value.morning_capacity,
+    afternoonCapacity: adminEditEventForm.value.afternoon_capacity,
+  });
+  if (sessionErr) {
+    alert(sessionErr);
+    return;
+  }
   adminEditSaving.value = true;
   try {
     const toMysqlDate = (value: string) => (value ? `${value.replace('T', ' ')}:00` : undefined);
@@ -286,6 +344,9 @@ const saveAdminEditEvent = async () => {
       start_at: toMysqlDate(adminEditEventForm.value.start_at),
       end_at: toMysqlDate(adminEditEventForm.value.end_at),
       capacity: Number(adminEditEventForm.value.capacity),
+      session_mode: adminEditEventForm.value.session_mode,
+      morning_capacity: adminEditEventForm.value.session_mode === 'SPLIT_SESSIONS' ? Number(adminEditEventForm.value.morning_capacity ?? 0) : null,
+      afternoon_capacity: adminEditEventForm.value.session_mode === 'SPLIT_SESSIONS' ? Number(adminEditEventForm.value.afternoon_capacity ?? 0) : null,
       description: adminEditEventForm.value.description,
       approval_mode: adminEditEventForm.value.approval_mode
     });
@@ -938,11 +999,24 @@ const handleCreateEvent = async () => {
           can_view_report: sq.can_view_report,
         }));
 
-    await api.post('/events', {
+    const sessionErr = validateSessionForm({
+      sessionMode: newEvent.value.session_mode,
+      capacity: Number(newEvent.value.capacity),
+      morningCapacity: newEvent.value.morning_capacity,
+      afternoonCapacity: newEvent.value.afternoon_capacity,
+    });
+    if (sessionErr) {
+      alert(sessionErr);
+      return;
+    }
+
+    const res = await api.post('/events', {
       ...newEvent.value,
+      morning_capacity: newEvent.value.session_mode === 'SPLIT_SESSIONS' ? Number(newEvent.value.morning_capacity ?? 0) : null,
+      afternoon_capacity: newEvent.value.session_mode === 'SPLIT_SESSIONS' ? Number(newEvent.value.afternoon_capacity ?? 0) : null,
       staff_quotas: staffQuotasToSend,
     });
-    alert('Tạo sự kiện và thiết lập phân quyền tài khoản thành công!');
+    const createdEv = res.data?.data;
     showCreateEventModal.value = false;
     newEvent.value = {
       name: '',
@@ -951,6 +1025,9 @@ const handleCreateEvent = async () => {
       start_at: '2026-10-15T08:30',
       end_at: '2026-10-15T17:30',
       capacity: 500,
+      session_mode: 'FULL_DAY',
+      morning_capacity: 250,
+      afternoon_capacity: 250,
       approval_mode: 'REFERRER_ONLY',
       tenant_id: null,
       plan_id: null,
@@ -961,6 +1038,11 @@ const handleCreateEvent = async () => {
       geofence_enabled: false,
     };
     await loadEvents();
+    if (createdEv?.id) {
+      openEventInvitesModal(createdEv);
+    } else {
+      alert('Tạo sự kiện và thiết lập phân quyền tài khoản thành công!');
+    }
   } catch (e: any) {
     alert(e.response?.data?.message || e.message);
   }
@@ -2942,9 +3024,15 @@ const formatOtpTime = (dateStr: string) => {
                 <Calendar class="w-3.5 h-3.5 text-slate-400 shrink-0" />
                 <span>{{ new Date(ev.start_at).toLocaleString('vi-VN') }}</span>
               </div>
-              <div class="flex items-center gap-2">
+              <div class="flex items-center gap-2 flex-wrap">
                 <Users class="w-3.5 h-3.5 text-slate-400 shrink-0" />
                 <span>Sức chứa: {{ ev.capacity }} khách</span>
+                <span
+                  v-if="ev.session_mode === 'SPLIT_SESSIONS'"
+                  class="text-[10px] font-bold px-2 py-0.5 rounded-full bg-indigo-50 text-indigo-700 border border-indigo-200"
+                >
+                  Sáng: {{ ev.morning_capacity }} · Chiều: {{ ev.afternoon_capacity }}
+                </span>
               </div>
               <div v-if="ev.tenant_name" class="flex items-center gap-2">
                 <Building class="w-3.5 h-3.5 text-primary-500 shrink-0" />
@@ -2961,6 +3049,14 @@ const formatOtpTime = (dateStr: string) => {
               >
                 <BarChart3 class="w-3.5 h-3.5" />
                 <span>Chi tiết & Điểm danh</span>
+              </button>
+              <button
+                @click="openEventInvitesModal(ev)"
+                class="btn btn-secondary py-2 px-3 text-xs text-primary-700 bg-primary-50/70 hover:bg-primary-100 border border-primary-200"
+                title="Xem & sao chép link mời sự kiện"
+              >
+                <Link2 class="w-3.5 h-3.5 text-primary-600" />
+                <span>{{ ev.session_mode === 'SPLIT_SESSIONS' ? '2 Link Sáng/Chiều' : 'Link mời' }}</span>
               </button>
               <button
                 @click="openAdminEditEventModal(ev)"
@@ -3347,7 +3443,16 @@ const formatOtpTime = (dateStr: string) => {
                   <tr v-for="att in filteredAttendees" :key="att.registration_id" class="hover:bg-slate-50">
                     <td class="py-3 px-4">
                       <div class="font-bold text-slate-900">{{ att.full_name }}</div>
-                      <div class="font-mono text-[11px] text-slate-500">{{ att.phone }}</div>
+                      <div class="flex items-center gap-1.5 flex-wrap mt-0.5">
+                        <span class="font-mono text-[11px] text-slate-500">{{ att.phone }}</span>
+                        <span
+                          v-if="att.session_type && att.session_type !== 'FULL_DAY'"
+                          class="px-1.5 py-0.5 rounded-md text-[10px] font-bold border"
+                          :class="sessionBadgeClasses(att.session_type)"
+                        >
+                          {{ formatSessionLabel(att.session_type) }}
+                        </span>
+                      </div>
                     </td>
                     <td class="py-3 px-4">
                       <div class="font-bold text-primary-700">{{ att.referrer_name }}</div>
@@ -3895,6 +4000,13 @@ const formatOtpTime = (dateStr: string) => {
             <p class="text-[11px] text-slate-500">Giới hạn số lượng người có thể nhận vé cho sự kiện này.</p>
           </div>
 
+          <SessionAllocationField
+            v-model:sessionMode="newEvent.session_mode"
+            v-model:morningCapacity="newEvent.morning_capacity"
+            v-model:afternoonCapacity="newEvent.afternoon_capacity"
+            :capacity="Number(newEvent.capacity || 0)"
+          />
+
           <div><p class="mt-1 text-[11px] text-slate-500">Khách thuê tự vận hành sự kiện trong cổng riêng; 3 sự kiện đầu dùng gói thử, sau đó mỗi sự kiện cần một gói đã được xác nhận.</p></div>
 
           <!-- Setting Phê Duyệt Vé -->
@@ -4286,6 +4398,13 @@ const formatOtpTime = (dateStr: string) => {
             </p>
           </div>
 
+          <SessionAllocationField
+            v-model:sessionMode="adminEditEventForm.session_mode"
+            v-model:morningCapacity="adminEditEventForm.morning_capacity"
+            v-model:afternoonCapacity="adminEditEventForm.afternoon_capacity"
+            :capacity="Number(adminEditEventForm.capacity || 0)"
+          />
+
           <div>
             <label class="block font-bold text-slate-700 text-xs mb-1">Mô tả sự kiện</label>
             <textarea v-model="adminEditEventForm.description" rows="2" class="w-full p-2 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-700"></textarea>
@@ -4503,6 +4622,14 @@ const formatOtpTime = (dateStr: string) => {
       :show="showAdminInviteCardModal"
       :cardData="adminCardData"
       @close="showAdminInviteCardModal = false"
+    />
+
+    <!-- MODAL: LINK MỜI & MÃ QR SỰ KIỆN (HỖ TRỢ 1 LINK CẢ NGÀY HOẶC 2 LINK SÁNG/CHIỀU) -->
+    <AdminEventInvitesModal
+      :show="showEventInvitesModal"
+      :event="invitesModalEvent"
+      @close="showEventInvitesModal = false"
+      @open-vip-card="openAdminInviteCardFromLink"
     />
 
     <!-- MODAL: TRUNG TÂM TRA CỨU & CẤP MÃ OTP ADMIN -->

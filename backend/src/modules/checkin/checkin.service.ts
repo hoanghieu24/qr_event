@@ -80,7 +80,7 @@ export class CheckinService {
         // === SUCCESS (GREEN) ===
         const [rows]: any = await conn.query(
           `SELECT t.id as ticket_id, t.code, t.status, t.used_at,
-                  r.customer_id, r.referrer_id,
+                  r.customer_id, r.referrer_id, r.session_type,
                   r.full_name, r.phone, r.email, r.address, r.approved_at,
                   u_ref.name as referrer_name, u_ref.phone as referrer_phone, u_ref.email as referrer_email,
                   e.id as event_id, e.name as event_name, e.location as event_location
@@ -140,6 +140,7 @@ export class CheckinService {
             phone: data.phone,
             email: data.email,
             address: data.address,
+            session_type: data.session_type || 'FULL_DAY',
             approved_at: data.approved_at,
           },
           referrer: {
@@ -159,7 +160,7 @@ export class CheckinService {
       const [ticketRows]: any = await conn.query(
         `SELECT t.id as ticket_id, t.code, t.status, t.used_at, t.used_by,
                 u_staff.name as first_scanner_name,
-                r.customer_id, r.referrer_id,
+                r.customer_id, r.referrer_id, r.session_type,
                 r.full_name, r.phone, r.email, r.address, r.approved_at,
                 u_ref.name as referrer_name, u_ref.phone as referrer_phone, u_ref.email as referrer_email,
                 e.id as event_id, e.name as event_name, e.location as event_location
@@ -222,6 +223,7 @@ export class CheckinService {
             phone: data.phone,
             email: data.email,
             address: data.address,
+            session_type: data.session_type || 'FULL_DAY',
             approved_at: data.approved_at,
           },
           referrer: {
@@ -266,7 +268,7 @@ export class CheckinService {
     await this.requireCanScan(staffId, eventId, isAdmin);
     return await query(`
       SELECT t.id as ticket_id, t.code, t.status, t.used_at,
-             r.full_name, r.phone, r.email,
+             r.full_name, r.phone, r.email, r.session_type,
              u_ref.name as referrer_name
       FROM tickets t
       JOIN registrations r ON t.registration_id = r.id
@@ -318,7 +320,7 @@ export class CheckinService {
     await this.requireCanScan(staffId, eventId, isAdmin);
     return await query(`
       SELECT sl.*, u.name as scanner_name, t.code as ticket_code,
-             r.full_name as attendee_name
+             r.full_name as attendee_name, r.session_type as attendee_session_type
       FROM scan_logs sl
       JOIN users u ON sl.scanned_by = u.id
       LEFT JOIN tickets t ON sl.ticket_id = t.id

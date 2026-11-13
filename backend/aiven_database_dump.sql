@@ -53,6 +53,9 @@ CREATE TABLE `events` (
   `end_at` datetime NOT NULL,
   `registration_deadline` datetime DEFAULT NULL,
   `capacity` int NOT NULL DEFAULT '500',
+  `session_mode` enum('FULL_DAY','SPLIT_SESSIONS') COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT 'FULL_DAY',
+  `morning_capacity` int DEFAULT NULL,
+  `afternoon_capacity` int DEFAULT NULL,
   `status` enum('DRAFT','PUBLISHED','CLOSED','CANCELLED') CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT 'PUBLISHED',
   `created_by` int NOT NULL,
   `created_at` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP,
@@ -90,6 +93,7 @@ CREATE TABLE `invite_links` (
   `expires_at` datetime NOT NULL,
   `max_registrations` int NOT NULL DEFAULT '100',
   `current_registrations` int NOT NULL DEFAULT '0',
+  `session_type` enum('FULL_DAY','MORNING','AFTERNOON') COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT 'FULL_DAY',
   `status` enum('ACTIVE','REVOKED','EXPIRED','CLOSED') CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT 'ACTIVE',
   `created_at` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP,
   PRIMARY KEY (`id`),
@@ -142,6 +146,7 @@ CREATE TABLE `registrations` (
   `phone` varchar(20) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL,
   `email` varchar(150) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL,
   `address` varchar(255) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `session_type` enum('FULL_DAY','MORNING','AFTERNOON') COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT 'FULL_DAY',
   `status` enum('PENDING','PENDING_ADMIN','APPROVED','REJECTED') CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT 'PENDING',
   `rejection_reason` text CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci,
   `approved_by` int DEFAULT NULL,
@@ -390,7 +395,7 @@ CREATE TABLE `user_permissions` (
   KEY `fk_up_perm` (`permission_id`),
   CONSTRAINT `fk_up_perm` FOREIGN KEY (`permission_id`) REFERENCES `permissions` (`id`) ON DELETE CASCADE,
   CONSTRAINT `fk_up_user` FOREIGN KEY (`user_id`) REFERENCES `users` (`id`) ON DELETE CASCADE
-) ENGINE=InnoDB AUTO_INCREMENT=193 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+) ENGINE=InnoDB AUTO_INCREMENT=235 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 INSERT INTO `user_permissions` (`id`, `user_id`, `permission_id`, `created_at`) VALUES (51, 28, 8, '2026-10-15 04:04:38');
 INSERT INTO `user_permissions` (`id`, `user_id`, `permission_id`, `created_at`) VALUES (52, 28, 1, '2026-10-15 04:04:38');
 INSERT INTO `user_permissions` (`id`, `user_id`, `permission_id`, `created_at`) VALUES (53, 28, 2, '2026-10-15 04:04:38');
@@ -437,9 +442,16 @@ INSERT INTO `user_permissions` (`id`, `user_id`, `permission_id`, `created_at`) 
 INSERT INTO `user_permissions` (`id`, `user_id`, `permission_id`, `created_at`) VALUES (183, 62, 4, '2026-11-12 08:06:29');
 INSERT INTO `user_permissions` (`id`, `user_id`, `permission_id`, `created_at`) VALUES (185, 62, 6, '2026-11-12 08:06:29');
 INSERT INTO `user_permissions` (`id`, `user_id`, `permission_id`, `created_at`) VALUES (187, 62, 9, '2026-11-12 08:06:29');
-INSERT INTO `user_permissions` (`id`, `user_id`, `permission_id`, `created_at`) VALUES (190, 1, 6, '2026-11-13 03:03:57');
-INSERT INTO `user_permissions` (`id`, `user_id`, `permission_id`, `created_at`) VALUES (191, 1, 9, '2026-11-13 03:03:57');
 INSERT INTO `user_permissions` (`id`, `user_id`, `permission_id`, `created_at`) VALUES (192, 77, 7, '2026-11-13 03:13:25');
+INSERT INTO `user_permissions` (`id`, `user_id`, `permission_id`, `created_at`) VALUES (226, 1, 1, '2026-11-13 04:00:14');
+INSERT INTO `user_permissions` (`id`, `user_id`, `permission_id`, `created_at`) VALUES (227, 1, 2, '2026-11-13 04:00:14');
+INSERT INTO `user_permissions` (`id`, `user_id`, `permission_id`, `created_at`) VALUES (228, 1, 3, '2026-11-13 04:00:14');
+INSERT INTO `user_permissions` (`id`, `user_id`, `permission_id`, `created_at`) VALUES (229, 1, 4, '2026-11-13 04:00:14');
+INSERT INTO `user_permissions` (`id`, `user_id`, `permission_id`, `created_at`) VALUES (230, 1, 5, '2026-11-13 04:00:14');
+INSERT INTO `user_permissions` (`id`, `user_id`, `permission_id`, `created_at`) VALUES (231, 1, 6, '2026-11-13 04:00:14');
+INSERT INTO `user_permissions` (`id`, `user_id`, `permission_id`, `created_at`) VALUES (232, 1, 7, '2026-11-13 04:00:14');
+INSERT INTO `user_permissions` (`id`, `user_id`, `permission_id`, `created_at`) VALUES (233, 1, 9, '2026-11-13 04:00:14');
+INSERT INTO `user_permissions` (`id`, `user_id`, `permission_id`, `created_at`) VALUES (234, 1, 8, '2026-11-13 04:00:14');
 DROP TABLE IF EXISTS `users`;
 CREATE TABLE `users` (
   `id` int NOT NULL AUTO_INCREMENT,
@@ -468,9 +480,6 @@ INSERT INTO `users` (`id`, `type`, `name`, `phone`, `email`, `password_hash`, `o
 INSERT INTO `users` (`id`, `type`, `name`, `phone`, `email`, `password_hash`, `otp_code`, `otp_expires_at`, `status`, `created_at`, `updated_at`) VALUES (50, 'STAFF', 'hieutestkhachmoi', '0867918231', 'testkhachmoi@gmail.com', '$2b$10$SFkFFEYWsoy5nqzvWjxCJu4WYERn4CIM5dg1fBjscgNISKpMBYjc6', NULL, NULL, 'ACTIVE', '2026-10-24 09:32:21', '2026-10-24 09:32:21');
 INSERT INTO `users` (`id`, `type`, `name`, `phone`, `email`, `password_hash`, `otp_code`, `otp_expires_at`, `status`, `created_at`, `updated_at`) VALUES (51, 'TENANT_ADMIN', 'Hoàng Văn Hiếu', '0867293123', 'hieuhoang@gmail.com', '$2b$10$xT3.eulHzXh0rM6anLvA8eGEah3TwrpR1/MgZyGKF9BcFUxUnLafq', NULL, NULL, 'ACTIVE', '2026-10-24 09:42:46', '2026-11-03 07:32:56');
 INSERT INTO `users` (`id`, `type`, `name`, `phone`, `email`, `password_hash`, `otp_code`, `otp_expires_at`, `status`, `created_at`, `updated_at`) VALUES (54, 'STAFF', 'hieuquetpr', '0867198640', 'hieuqr@gmail.com', '$2b$10$Rx.fmyqyN78LMiVZ64TsRezLLDgo9o1GS.y.YnNVV6DeViGhKQU.6', NULL, NULL, 'ACTIVE', '2026-10-26 09:21:54', '2026-10-26 09:21:54');
-INSERT INTO `users` (`id`, `type`, `name`, `phone`, `email`, `password_hash`, `otp_code`, `otp_expires_at`, `status`, `created_at`, `updated_at`) VALUES (55, 'CUSTOMER', 'Nguyễn Minh Khách VIP', '0943631279', 'khachvip_1793068739604@eventqr.vn', NULL, NULL, NULL, 'ACTIVE', '2026-10-27 02:38:59', '2026-10-27 02:38:59');
-INSERT INTO `users` (`id`, `type`, `name`, `phone`, `email`, `password_hash`, `otp_code`, `otp_expires_at`, `status`, `created_at`, `updated_at`) VALUES (56, 'CUSTOMER', 'Nguyễn Minh Khách VIP', '0998781436', 'khachvip_1793068840737@eventqr.vn', NULL, NULL, NULL, 'ACTIVE', '2026-10-27 02:40:40', '2026-10-27 02:40:40');
-INSERT INTO `users` (`id`, `type`, `name`, `phone`, `email`, `password_hash`, `otp_code`, `otp_expires_at`, `status`, `created_at`, `updated_at`) VALUES (57, 'CUSTOMER', 'Nguyễn Minh Khách VIP', '0929896532', 'khachvip_1793068875661@eventqr.vn', NULL, NULL, NULL, 'ACTIVE', '2026-10-27 02:41:15', '2026-10-27 02:41:15');
 INSERT INTO `users` (`id`, `type`, `name`, `phone`, `email`, `password_hash`, `otp_code`, `otp_expires_at`, `status`, `created_at`, `updated_at`) VALUES (58, 'TENANT_ADMIN', 'Hoàng Hiếu (Chủ Sự Kiện)', '0901112233', 'hoanghieufc25@gmail.com', '$2b$10$Cf5hRV10oGdPiGCn5XAfWuWtl.2Ufb09CNOL2Djh6E5c4zheKZm9K', NULL, NULL, 'ACTIVE', '2026-10-27 02:53:29', '2026-10-27 02:54:02');
 INSERT INTO `users` (`id`, `type`, `name`, `phone`, `email`, `password_hash`, `otp_code`, `otp_expires_at`, `status`, `created_at`, `updated_at`) VALUES (59, 'STAFF', 'Hà Thị Quỳnh', '0823412421', 'hathiquynh@gmail.com', '$2b$10$zeFSkbO68hjd23w3uX3Z/u7hGADpW53ZKJK5Uieby6CL1l2b.tLwO', NULL, NULL, 'ACTIVE', '2026-11-03 08:13:07', '2026-11-03 08:13:07');
 INSERT INTO `users` (`id`, `type`, `name`, `phone`, `email`, `password_hash`, `otp_code`, `otp_expires_at`, `status`, `created_at`, `updated_at`) VALUES (60, 'STAFF', 'NVmoikhach1', '0923412342', 'moikhach1@gmail.com', '$2b$10$bvwJbWqbpUfqJ8973KpAeOzaJiRNftsRjROmC2kdXzfBFQ.bzojyK', NULL, NULL, 'ACTIVE', '2026-11-03 08:13:33', '2026-11-03 08:13:33');
