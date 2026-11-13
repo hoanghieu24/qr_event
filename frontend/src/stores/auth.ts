@@ -34,15 +34,26 @@ export const useAuthStore = defineStore('auth', {
   },
 
   actions: {
+    setSession(token: string, user: User) {
+      this.token = token;
+      this.user = user;
+      localStorage.setItem('token', token);
+      localStorage.setItem('user', JSON.stringify(user));
+      if (user.type === 'TENANT_ADMIN' || user.type === 'STAFF') {
+        localStorage.setItem('tenant_token', token);
+        localStorage.setItem('tenant_user', JSON.stringify(user));
+      } else {
+        localStorage.removeItem('tenant_token');
+        localStorage.removeItem('tenant_user');
+      }
+      refreshSocketAuth();
+    },
+
     async loginWithPassword(email: string, password: string) {
       this.isLoading = true;
       try {
         const res = await api.post('/auth/login', { email, password });
-        this.token = res.data.data.token;
-        this.user = res.data.data.user;
-        localStorage.setItem('token', this.token as string);
-        localStorage.setItem('user', JSON.stringify(this.user));
-        refreshSocketAuth();
+        this.setSession(res.data.data.token, res.data.data.user);
         return this.user;
       } finally {
         this.isLoading = false;
@@ -52,11 +63,7 @@ export const useAuthStore = defineStore('auth', {
     async sendOtp(email: string) {
       const res = await api.post('/auth/send-otp', { email });
       if (res.data?.data?.token) {
-        this.token = res.data.data.token;
-        this.user = res.data.data.user;
-        localStorage.setItem('token', this.token as string);
-        localStorage.setItem('user', JSON.stringify(this.user));
-        refreshSocketAuth();
+        this.setSession(res.data.data.token, res.data.data.user);
       }
       return res;
     },
@@ -65,11 +72,7 @@ export const useAuthStore = defineStore('auth', {
       this.isLoading = true;
       try {
         const res = await api.post('/auth/verify-otp', { email, otp, name, phone });
-        this.token = res.data.data.token;
-        this.user = res.data.data.user;
-        localStorage.setItem('token', this.token as string);
-        localStorage.setItem('user', JSON.stringify(this.user));
-        refreshSocketAuth();
+        this.setSession(res.data.data.token, res.data.data.user);
         return this.user;
       } finally {
         this.isLoading = false;
@@ -99,6 +102,8 @@ export const useAuthStore = defineStore('auth', {
       this.user = null;
       localStorage.removeItem('token');
       localStorage.removeItem('user');
+      localStorage.removeItem('tenant_token');
+      localStorage.removeItem('tenant_user');
       refreshSocketAuth();
     },
   },

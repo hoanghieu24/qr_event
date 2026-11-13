@@ -182,4 +182,28 @@ router.beforeEach(async (to, from, next) => {
   next();
 });
 
+const CHUNK_RELOAD_KEY = 'eventgo_chunk_reload_at';
+
+function isDynamicImportError(error: unknown): boolean {
+  const msg = String((error as any)?.message || error || '').toLowerCase();
+  return (
+    msg.includes('failed to fetch dynamically imported module') ||
+    msg.includes('importing a module script failed') ||
+    msg.includes('loading chunk') ||
+    msg.includes('loading css chunk') ||
+    msg.includes('dynamically imported module')
+  );
+}
+
+router.onError((error, to) => {
+  if (!isDynamicImportError(error) || !to?.fullPath) return;
+  const now = Date.now();
+  const lastReloadAt = Number(sessionStorage.getItem(CHUNK_RELOAD_KEY) || '0');
+  // Reload once per 15s window when a stale Vite route chunk fails after a new deploy
+  if (!lastReloadAt || now - lastReloadAt > 15000) {
+    sessionStorage.setItem(CHUNK_RELOAD_KEY, String(now));
+    window.location.assign(to.fullPath);
+  }
+});
+
 export default router;

@@ -848,11 +848,7 @@ const login = async () => {
 
     token.value = res.data.data.token;
     user.value = account;
-
-    localStorage.setItem('tenant_token', token.value);
-    localStorage.setItem('tenant_user', JSON.stringify(account));
-    localStorage.setItem('token', token.value);
-    localStorage.setItem('user', JSON.stringify(account));
+    authStore.setSession(token.value, account);
 
     password.value = '';
     if (isTenantStaff) {
@@ -893,10 +889,8 @@ const registerTenantAccount = async () => {
     const { token: t, user: u } = res.data.data;
     token.value = t;
     user.value = u;
-    localStorage.setItem('tenant_token', t);
-    localStorage.setItem('tenant_user', JSON.stringify(u));
-    localStorage.setItem('token', t);
-    localStorage.setItem('user', JSON.stringify(u));
+    authStore.setSession(t, u);
+    tenantRegForm.value = { name: '', contact_name: '', email: '', phone: '', password: '' };
     await loadPortal();
   } catch (error: any) {
     errorMessage.value = explainError(error);
@@ -909,10 +903,7 @@ const logout = () => {
   stopScanner();
   token.value = '';
   user.value = null;
-  localStorage.removeItem('tenant_token');
-  localStorage.removeItem('tenant_user');
-  localStorage.removeItem('token');
-  localStorage.removeItem('user');
+  authStore.logout();
   events.value = [];
   selectedEvent.value = null;
   staffEvents.value = [];

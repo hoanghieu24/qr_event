@@ -63,10 +63,25 @@ const sendingOtp = ref(false);
 const customerError = ref('');
 const customerMessage = ref('');
 
+const tenantLoginSuccess = ref('');
+const tenantRegRedirecting = ref(false);
+
+const navigateWithFallback = async (target: string) => {
+  try {
+    const failure = await router.replace(target);
+    if (failure) {
+      window.location.assign(target);
+    }
+  } catch {
+    window.location.assign(target);
+  }
+};
+
 // Xử lý đăng ký Ban tổ chức / Khách thuê
 const handleTenantRegister = async () => {
   tenantRegError.value = '';
   tenantRegSuccess.value = '';
+  tenantLoginSuccess.value = '';
   if (!tenantForm.value.name.trim() || !tenantForm.value.email.trim() || !tenantForm.value.password) {
     tenantRegError.value = 'Vui lòng điền đầy đủ tên đơn vị, email và mật khẩu.';
     return;
@@ -78,27 +93,39 @@ const handleTenantRegister = async () => {
   tenantRegBusy.value = true;
   try {
     const res = await api.post('/tenants/register', tenantForm.value);
-    const { token, user } = res.data.data;
-    auth.token = token;
-    auth.user = user;
-    localStorage.setItem('tenant_token', token);
-    localStorage.setItem('tenant_user', JSON.stringify(user));
-    localStorage.setItem('token', token);
-    localStorage.setItem('user', JSON.stringify(user));
-    tenantRegSuccess.value = '🎉 ' + (res.data?.data?.message || 'Đăng ký thành công! Đang chuyển vào Cổng sự kiện của bạn...');
-    setTimeout(() => {
-      router.push('/tenant');
-    }, 900);
+    const payload = res.data?.data || {};
+    const { token, user } = payload;
+    const registeredEmail = tenantForm.value.email.trim().toLowerCase();
+    const successMsg =
+      '🎉 ' + (payload.message || 'Đăng ký thành công! Đang vào Không gian sự kiện...');
+
+    tenantForm.value = { name: '', contact_name: '', email: '', phone: '', password: '' };
+
+    if (token && user) {
+      auth.setSession(token, user);
+      tenantRegSuccess.value = successMsg;
+      tenantRegRedirecting.value = true;
+      await navigateWithFallback('/tenant');
+      return;
+    }
+
+    // Fallback sang màn hình đăng nhập nếu server chưa cấp token trực tiếp
+    tenantSubTab.value = 'login';
+    tenantLoginEmail.value = registeredEmail;
+    tenantLoginSuccess.value = `${successMsg} Vui lòng đăng nhập để bắt đầu.`;
   } catch (err: any) {
     tenantRegError.value = err.response?.data?.message || err.message || 'Đăng ký đơn vị tổ chức thất bại.';
   } finally {
-    tenantRegBusy.value = false;
+    if (!tenantRegRedirecting.value) {
+      tenantRegBusy.value = false;
+    }
   }
 };
 
 // Xử lý đăng nhập Ban tổ chức / Khách thuê
 const handleTenantLogin = async () => {
   tenantLoginError.value = '';
+  tenantLoginSuccess.value = '';
   const email = tenantLoginEmail.value.trim();
   const password = tenantLoginPassword.value.trim();
   if (!email || !password) {
@@ -109,17 +136,15 @@ const handleTenantLogin = async () => {
     const user = await auth.loginWithPassword(email, password);
     const redirectQuery = route.query.redirect as string;
     if (user?.type === 'TENANT_ADMIN' || user?.type === 'STAFF') {
-      localStorage.setItem('tenant_token', auth.token || '');
-      localStorage.setItem('tenant_user', JSON.stringify(user));
-      if (redirectQuery) {
-        router.push(redirectQuery);
-        return;
-      }
-      router.push('/tenant');
+      await navigateWithFallback(redirectQuery || '/tenant');
+      return;
+    }
+    if (user?.type === 'ADMIN') {
+      await navigateWithFallback('/admin');
       return;
     }
     // Nếu là tài khoản khách thông thường
-    router.push('/my-ticket');
+    await navigateWithFallback('/my-ticket');
   } catch (err: any) {
     tenantLoginError.value = err.response?.data?.message || err.message || 'Đăng nhập không thành công.';
   }
@@ -379,7 +404,16 @@ const onOtpInput = (e: Event) => {
             <!-- ĐĂNG KÝ BAN TỔ CHỨC MỚI -->
             <div v-if="tenantSubTab === 'register'" class="space-y-3.5">
               <div v-if="tenantRegError" class="alert-error">{{ tenantRegError }}</div>
-              <div v-if="tenantRegSuccess" class="alert-success">{{ tenantRegSuccess }}</div>
+              <div v-if="tenantRegSuccess" class="alert-success flex items-center justify-between gap-2">
+                <span>{{ tenantRegSuccess }}</span>
+                <button
+                  type="button"
+                  @click="navigateWithFallback('/tenant')"
+                  class="shrink-0 font-bold underline hover:opacity-80"
+                >
+                  Vào ngay →
+                </button>
+              </div>
 
               <div class="rounded-xl bg-amber-50 border border-amber-200 p-3 text-xs text-amber-900 flex items-start gap-2.5">
                 <Sparkles class="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
@@ -430,9 +464,10 @@ const onOtpInput = (e: Event) => {
                   </div>
                 </div>
 
-                <button type="submit" :disabled="tenantRegBusy" class="btn-primary btn-lg w-full">
-                  <Loader2 v-if="tenantRegBusy" class="h-5 w-5 animate-spin" />
-                  <template v-else>
+                <button type="submit" :disabled="tenantRegBusy || tenantRegRedirecting" class="btn-primary btn-lg w-full">
+                  <Loader2 v-if="tenantRegBusy || tenantRegRedirecting" class="h-5 w-5 animate-spin" />
+                  <span v-if="tenantRegRedirecting">Đang vào Không gian Sự kiện...</span>
+                  <template v-else-if="!tenantRegBusy">
                     <span>Đăng ký & Mở sự kiện ngay</span>
                     <ArrowRight class="h-[18px] w-[18px]" />
                   </template>
@@ -440,7 +475,7 @@ const onOtpInput = (e: Event) => {
 
                 <div class="text-center pt-2 text-xs text-slate-600">
                   Đã có tài khoản ban tổ chức?
-                  <button type="button" @click="tenantSubTab = 'login'" class="font-bold text-primary-600 hover:underline">
+                  <button type="button" @click="tenantSubTab = 'login'; tenantLoginError = ''" class="font-bold text-primary-600 hover:underline">
                     Đăng nhập
                   </button>
                 </div>
@@ -450,6 +485,7 @@ const onOtpInput = (e: Event) => {
             <!-- ĐĂNG NHẬP BAN TỔ CHỨC -->
             <form v-else @submit.prevent="handleTenantLogin" class="space-y-4">
               <div v-if="tenantLoginError" class="alert-error">{{ tenantLoginError }}</div>
+              <div v-if="tenantLoginSuccess" class="alert-success">{{ tenantLoginSuccess }}</div>
 
               <div>
                 <label class="field-label" for="ten-email">Email quản lý đơn vị</label>
