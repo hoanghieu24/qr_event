@@ -23,7 +23,7 @@ const menuOpen = ref(false);
 const bareLayout = computed(() =>
   route.path.startsWith('/invite') ||
   route.path === '/login' ||
-  route.path === '/khach' ||
+  route.path === '/guest' ||
   route.path === '/admin/login' ||
   route.path.startsWith('/tenant') ||
   route.path.startsWith('/events/')
@@ -159,7 +159,7 @@ watch(
               <div v-if="menuOpen" class="fixed inset-0 -z-10" @click="menuOpen = false" />
             </div>
           </template>
-          <router-link v-else to="/khach" class="btn-primary btn-sm">Đăng nhập</router-link>
+          <router-link v-else to="/guest" class="btn-primary btn-sm">Đăng nhập</router-link>
         </div>
       </div>
     </header>

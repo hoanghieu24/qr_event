@@ -909,7 +909,7 @@ const logout = async () => {
   staffEvents.value = [];
   staffInviteLink.value = null;
   staffRegistrations.value = [];
-  await performLogoutAndRedirect(router, authStore, '/khach');
+  await performLogoutAndRedirect(router, authStore, '/guest');
 };
 
 const loadStaffPortal = async () => {
@@ -1892,7 +1892,7 @@ onMounted(async () => {
     }
   } else {
     // Nếu chưa đăng nhập hoặc không phải ban tổ chức -> chuyển về trang khách
-    await navigateWithFallback(router, '/khach', true);
+    await navigateWithFallback(router, '/guest', true);
   }
 });
 

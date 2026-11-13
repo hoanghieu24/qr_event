@@ -6,6 +6,7 @@ import {
   getHomeRouteForUser,
   getUnauthorizedRedirect,
   navigateWithFallback,
+  triggerHardNavigation,
 } from '../utils/authSession';
 
 const router = createRouter({
@@ -18,28 +19,32 @@ const router = createRouter({
         if (auth.isAdmin) return '/admin';
         if (auth.isTenantAdmin || auth.isStaff) return '/tenant';
         if (auth.isCustomer) return '/my-ticket';
-        return '/khach';
+        return '/guest';
       },
     },
     // ========================================================
     // 1. LINK DÀNH CHO KHÁCH (Khách xem vé & Khách mở sự kiện)
     // ========================================================
     {
-      path: '/khach',
+      path: '/guest',
       name: 'guest-portal',
       component: () => import('../views/LoginView.vue'),
     },
     {
+      path: '/khach',
+      redirect: (to) => ({ path: '/guest', query: to.query }),
+    },
+    {
       path: '/login',
-      redirect: (to) => ({ path: '/khach', query: to.query }),
+      redirect: (to) => ({ path: '/guest', query: to.query }),
     },
     {
       path: '/tra-cuu',
-      redirect: '/khach?tab=check',
+      redirect: '/guest?tab=check',
     },
     {
       path: '/to-chuc',
-      redirect: '/khach?tab=host',
+      redirect: '/guest?tab=host',
     },
     // ========================================================
     // 2. LINK DÀNH CHO ADMIN (Tách biệt hoàn toàn, bảo mật cao)
@@ -103,7 +108,7 @@ const router = createRouter({
     },
     {
       path: '/dang-ky',
-      redirect: '/khach',
+      redirect: '/guest',
     },
     {
       path: '/my-ticket',
@@ -170,8 +175,8 @@ router.beforeEach(async (to, _from, next) => {
     }
   }
 
-  // 2. KHU VỰC KHÁCH (/khach): Nếu là Admin tổng đang đăng nhập, tự động chuyển về /admin
-  if (to.path === '/khach' && auth.isAuthenticated && auth.isAdmin) {
+  // 2. KHU VỰC KHÁCH (/guest): Nếu là Admin tổng đang đăng nhập, tự động chuyển về /admin
+  if (to.path === '/guest' && auth.isAuthenticated && auth.isAdmin) {
     return next('/admin');
   }
 
@@ -181,7 +186,7 @@ router.beforeEach(async (to, _from, next) => {
       if (to.path.startsWith('/admin')) {
         return next({ path: '/admin/login', query: { redirect: to.fullPath } });
       }
-      return next({ path: '/khach', query: { redirect: to.fullPath } });
+      return next({ path: '/guest', query: { redirect: to.fullPath } });
     }
 
     const allowedRoles = to.meta.allowedRoles as string[] | undefined;
@@ -220,7 +225,7 @@ router.onError((error, to) => {
   // Reload once per 15s window when a stale Vite route chunk fails after a new deploy
   if (!lastReloadAt || now - lastReloadAt > 15000) {
     sessionStorage.setItem(CHUNK_RELOAD_KEY, String(now));
-    window.location.replace(to.fullPath);
+    triggerHardNavigation(to.fullPath, true);
   }
 });
 

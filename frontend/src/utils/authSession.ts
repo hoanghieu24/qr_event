@@ -10,14 +10,15 @@ type AuthStore = ReturnType<typeof useAuthStore>;
 
 let inFlightRedirectTarget: string | null = null;
 let inFlightRedirectPromise: Promise<void> | null = null;
+let hardNavigationInProgressTo: string | null = null;
 
 /** Sanitize an internal redirect target to avoid open redirects or login loops. */
-export function sanitizeRedirectPath(rawPath: unknown, fallback = '/khach'): string {
+export function sanitizeRedirectPath(rawPath: unknown, fallback = '/guest'): string {
   if (typeof rawPath !== 'string') return fallback;
   const trimmed = rawPath.trim();
   if (!trimmed.startsWith('/') || trimmed.startsWith('//')) return fallback;
   const pathOnly = trimmed.split('?')[0];
-  if (pathOnly === '/login' || pathOnly === '/khach' || pathOnly === '/admin/login') {
+  if (pathOnly === '/login' || pathOnly === '/guest' || pathOnly === '/khach' || pathOnly === '/admin/login') {
     return fallback;
   }
   return trimmed;
@@ -25,7 +26,7 @@ export function sanitizeRedirectPath(rawPath: unknown, fallback = '/khach'): str
 
 /** Resolve which login screen corresponds to the current route or previous role. */
 export function getLoginRouteForPath(path: string, wasAdmin = false): string {
-  return wasAdmin || path.startsWith('/admin') ? '/admin/login' : '/khach';
+  return wasAdmin || path.startsWith('/admin') ? '/admin/login' : '/guest';
 }
 
 /** Resolve default authenticated home route based on account role. */
@@ -33,7 +34,7 @@ export function getHomeRouteForUser(auth: AuthStore): string {
   if (auth.isAdmin) return '/admin';
   if (auth.isTenantAdmin || auth.isStaff) return '/tenant';
   if (auth.isCustomer) return '/my-ticket';
-  return '/khach';
+  return '/guest';
 }
 
 /** Check whether current auth state satisfies all auth, role, and permission rules of a route. */
@@ -75,7 +76,7 @@ export function getUnauthorizedRedirect(
     !route.fullPath ||
     route.fullPath === '/' ||
     route.path === '/admin/login' ||
-    route.path === '/khach' ||
+    route.path === '/guest' ||
     route.path === '/login'
   ) {
     return loginBase;
@@ -87,7 +88,15 @@ export function isAuthRedirectInProgress(): boolean {
   return inFlightRedirectPromise !== null;
 }
 
-function hardNavigate(target: string, replace: boolean): void {
+export function triggerHardNavigation(target: string, replace = true): void {
+  if (hardNavigationInProgressTo === target) return;
+  hardNavigationInProgressTo = target;
+  setTimeout(() => {
+    if (hardNavigationInProgressTo === target) {
+      hardNavigationInProgressTo = null;
+    }
+  }, 2000);
+
   if (replace) {
     window.location.replace(target);
   } else {
@@ -117,10 +126,10 @@ export async function navigateWithFallback(router: Router, target: string, repla
       const stuckOnSameRoute = fromPath !== targetPathOnly && curPath === fromPath;
 
       if (abortedOrFailed || stuckOnSameRoute) {
-        hardNavigate(target, replace);
+        triggerHardNavigation(target, replace);
       }
     } catch {
-      hardNavigate(target, replace);
+      triggerHardNavigation(target, replace);
     } finally {
       if (inFlightRedirectTarget === target) {
         inFlightRedirectTarget = null;
