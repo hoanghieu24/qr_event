@@ -5,6 +5,7 @@ import { uploadImageToCloudinary } from '../../config/cloudinary';
 import { Realtime } from '../../realtime/socket';
 import { ENV } from '../../config/env';
 import { InvitesService } from '../invites/invites.service';
+import { tenantPlanVisibilityClause } from '../subscriptions/subscriptions.service';
 import {
   ensureEventSessionInvites,
   InviteSessionType,
@@ -299,10 +300,15 @@ export class TenantsService {
       [tenantId]
     );
     if (!tenants.length) throw new Error('Khách thuê không tồn tại hoặc đang bị khóa.');
+    const visibilitySql = tenantPlanVisibilityClause('p');
     const trialPlans = await query<any[]>(`
-      SELECT id, name, max_attendees, max_employees, max_referrers, max_scanners
-      FROM subscription_plans WHERE is_trial = 1 AND status = 'ACTIVE' ORDER BY id DESC LIMIT 1
-    `);
+      SELECT p.id, p.name, p.max_attendees, p.max_employees, p.max_referrers, p.max_scanners, p.for_all_tenants
+      FROM subscription_plans p
+      WHERE p.is_trial = 1 AND p.status = 'ACTIVE'
+        AND ${visibilitySql}
+      ORDER BY p.for_all_tenants ASC, p.id DESC
+      LIMIT 1
+    `, [tenantId]);
     const availablePackages = await query<any[]>(`
       SELECT id, package_name AS name, max_attendees, max_employees, max_referrers,
              max_scanners, price_vnd, requested_at
@@ -311,10 +317,12 @@ export class TenantsService {
       ORDER BY reviewed_at ASC, id ASC
     `, [tenantId]);
     const allPlans = await query<any[]>(`
-      SELECT id, name, description, max_attendees, max_employees, max_referrers, max_scanners, price_vnd, is_trial
-      FROM subscription_plans WHERE status = 'ACTIVE'
-      ORDER BY is_trial DESC, price_vnd ASC
-    `);
+      SELECT p.id, p.name, p.description, p.max_attendees, p.max_employees, p.max_referrers, p.max_scanners, p.price_vnd, p.is_trial, p.for_all_tenants
+      FROM subscription_plans p
+      WHERE p.status = 'ACTIVE'
+        AND ${visibilitySql}
+      ORDER BY p.is_trial DESC, p.for_all_tenants ASC, p.price_vnd ASC
+    `, [tenantId]);
     const paymentInfo = await this.getPaymentInfo();
     const requests = await query<any[]>(`
       SELECT id, package_name AS name, max_attendees, max_employees, max_referrers,
@@ -375,16 +383,17 @@ export class TenantsService {
       let paymentStatus: 'PAID' | 'PENDING_PAYMENT' = 'PAID';
 
       const packageParam = data.event_package_id || data.plan_id;
+      const planVisibilitySql = tenantPlanVisibilityClause('p');
 
       // 1. If explicit package request ID is passed and matches approved unused request
-      if (packageParam && typeof packageParam === 'number') {
+      if (data.event_package_id && typeof data.event_package_id === 'number' && !data.plan_id) {
         const [requests]: any = await conn.query(`
           SELECT id, package_name AS name, max_attendees, max_employees, max_referrers,
                  max_scanners, price_vnd
           FROM subscription_requests
           WHERE id = ? AND tenant_id = ? AND status = 'APPROVED' AND event_id IS NULL
           FOR UPDATE
-        `, [packageParam, tenantId]);
+        `, [data.event_package_id, tenantId]);
         if (requests.length) {
           packageInfo = requests[0];
           packageRequestId = Number(requests[0].id);
@@ -393,42 +402,58 @@ export class TenantsService {
         }
       }
 
-      // 2. If plan ID is chosen from subscription_plans
-      if (!packageInfo && packageParam) {
-        const cleanPlanId = String(packageParam).replace(/^plan_/, '');
+      // 2. If plan ID is chosen from subscription_plans (anything explicit other than 'trial')
+      const explicitPlanParam = data.plan_id ?? (packageParam && String(packageParam) !== 'trial' ? packageParam : null);
+      if (!packageInfo && explicitPlanParam) {
+        const cleanPlanId = String(explicitPlanParam).replace(/^plan_/, '');
         const [plans]: any = await conn.query(`
-          SELECT id, name, max_attendees, max_employees, max_referrers, max_scanners, price_vnd, is_trial
-          FROM subscription_plans WHERE id = ? AND status = 'ACTIVE' FOR UPDATE
-        `, [cleanPlanId]);
+          SELECT p.id, p.name, p.max_attendees, p.max_employees, p.max_referrers, p.max_scanners, p.price_vnd, p.is_trial
+          FROM subscription_plans p
+          WHERE p.id = ? AND p.status = 'ACTIVE'
+            AND ${planVisibilitySql}
+          FOR UPDATE
+        `, [cleanPlanId, tenantId]);
 
-        if (plans.length) {
-          const plan = plans[0];
-          if (plan.is_trial && Number(tenantRows[0].free_events_used) < FREE_EVENT_LIMIT) {
-            packageInfo = plan;
-            quotaSource = 'FREE';
-            paymentStatus = 'PAID';
-            await conn.query('UPDATE tenants SET free_events_used = free_events_used + 1 WHERE id = ?', [tenantId]);
-          } else {
-            packageInfo = plan;
-            quotaSource = 'PLAN_PURCHASE';
-            paymentStatus = plan.price_vnd > 0 ? 'PENDING_PAYMENT' : 'PAID';
+        if (!plans.length) {
+          throw new Error('Gói sự kiện không tồn tại hoặc không áp dụng cho tài khoản của bạn.');
+        }
+
+        const plan = plans[0];
+        if (plan.is_trial) {
+          if (Number(tenantRows[0].free_events_used) >= FREE_EVENT_LIMIT) {
+            throw new Error(`Bạn đã sử dụng hết ${FREE_EVENT_LIMIT} lượt sự kiện dùng thử miễn phí.`);
           }
+          packageInfo = plan;
+          quotaSource = 'FREE';
+          paymentStatus = 'PAID';
+          await conn.query('UPDATE tenants SET free_events_used = free_events_used + 1 WHERE id = ?', [tenantId]);
+        } else {
+          packageInfo = plan;
+          quotaSource = 'PLAN_PURCHASE';
+          paymentStatus = Number(plan.price_vnd) > 0 ? 'PENDING_PAYMENT' : 'PAID';
         }
       }
 
-      // 3. Fallback: use trial if remaining
-      if (!packageInfo) {
+      // 3. Fallback (or explicit 'trial'): use trial if remaining
+      if (!packageInfo && (!packageParam || String(packageParam) === 'trial')) {
         if (Number(tenantRows[0].free_events_used) < FREE_EVENT_LIMIT) {
           const [trialPlans]: any = await conn.query(`
-            SELECT id, name, max_attendees, max_employees, max_referrers, max_scanners, price_vnd
-            FROM subscription_plans WHERE is_trial = 1 AND status = 'ACTIVE' ORDER BY id DESC LIMIT 1 FOR UPDATE
-          `);
+            SELECT p.id, p.name, p.max_attendees, p.max_employees, p.max_referrers, p.max_scanners, p.price_vnd
+            FROM subscription_plans p
+            WHERE p.is_trial = 1 AND p.status = 'ACTIVE'
+              AND ${planVisibilitySql}
+            ORDER BY p.for_all_tenants ASC, p.id DESC
+            LIMIT 1
+            FOR UPDATE
+          `, [tenantId]);
           if (trialPlans.length) {
             packageInfo = trialPlans[0];
             quotaSource = 'FREE';
             paymentStatus = 'PAID';
             await conn.query('UPDATE tenants SET free_events_used = free_events_used + 1 WHERE id = ?', [tenantId]);
           }
+        } else if (String(packageParam) === 'trial') {
+          throw new Error(`Bạn đã sử dụng hết ${FREE_EVENT_LIMIT} lượt sự kiện dùng thử miễn phí.`);
         }
       }
 

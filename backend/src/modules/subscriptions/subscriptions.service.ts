@@ -16,6 +16,9 @@ type PlanInput = {
   tenant_ids?: number[];
 };
 
+export const tenantPlanVisibilityClause = (alias = 'p') =>
+  `(${alias}.for_all_tenants = 1 OR EXISTS (SELECT 1 FROM plan_tenants pt WHERE pt.plan_id = ${alias}.id AND pt.tenant_id = ?))`;
+
 export class SubscriptionsService {
   static async listPlans(tenantId?: number | null, activeOnly = false) {
     const plans = await query<any[]>(`
@@ -26,7 +29,7 @@ export class SubscriptionsService {
       FROM subscription_plans p
       WHERE 1=1
       ${activeOnly ? "AND p.status = 'ACTIVE' AND p.is_trial = 0" : ''}
-      ${tenantId ? "AND (p.for_all_tenants = 1 OR EXISTS (SELECT 1 FROM plan_tenants pt WHERE pt.plan_id = p.id AND pt.tenant_id = ?))" : ''}
+      ${tenantId ? `AND ${tenantPlanVisibilityClause('p')}` : ''}
       ORDER BY p.price_vnd ASC, p.max_attendees ASC, p.id ASC
     `, tenantId ? [tenantId] : []);
 
@@ -51,8 +54,12 @@ export class SubscriptionsService {
     const tenantIds = Array.isArray(data.tenant_ids) ? data.tenant_ids.map(Number) : [];
 
     return await withTransaction(async (conn) => {
-      if (isTrial && status === 'ACTIVE') {
-        await conn.query("UPDATE subscription_plans SET status = 'INACTIVE' WHERE is_trial = 1");
+      if (isTrial && status === 'ACTIVE' && forAll === 1) {
+        // Deactivate only global trial plans so tenant-specific private trial packages don't wipe out the default global trial.
+        await conn.query(
+          `UPDATE subscription_plans SET status = 'INACTIVE' WHERE is_trial = 1 AND for_all_tenants = 1${data.id ? ' AND id != ?' : ''}`,
+          data.id ? [data.id] : []
+        );
       }
       if (data.id) {
         const [result]: any = await conn.query(`
@@ -100,9 +107,12 @@ export class SubscriptionsService {
       if (!tenants.length) throw new Error('Khách thuê không tồn tại hoặc đang bị khóa.');
       if (Number(tenants[0].free_events_used) < 3) throw new Error('Bạn có thể dùng 3 sự kiện thử trước khi mua gói.');
       const [plans]: any = await conn.query(`
-        SELECT id, name, max_attendees, max_employees, max_referrers, max_scanners, price_vnd
-        FROM subscription_plans WHERE id = ? AND status = 'ACTIVE' AND is_trial = 0 LIMIT 1
-      `, [planId]);
+        SELECT p.id, p.name, p.max_attendees, p.max_employees, p.max_referrers, p.max_scanners, p.price_vnd
+        FROM subscription_plans p
+        WHERE p.id = ? AND p.status = 'ACTIVE' AND p.is_trial = 0
+          AND ${tenantPlanVisibilityClause('p')}
+        LIMIT 1
+      `, [planId, tenantId]);
       if (!plans.length) throw new Error('Gói sự kiện không còn khả dụng.');
       const [result]: any = await conn.query(`
         INSERT INTO subscription_requests

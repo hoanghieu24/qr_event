@@ -1028,7 +1028,10 @@ const openEventModal = (packageId?: number | string) => {
   } else if (usage.value?.available_packages?.length) {
     eventForm.value.event_package_id = usage.value.available_packages[0].id;
   } else if (plans.value?.length) {
-    eventForm.value.event_package_id = 'plan_' + plans.value[0].id;
+    const firstPlan = plans.value.find((p: any) => !p.is_trial);
+    if (firstPlan) {
+      eventForm.value.event_package_id = 'plan_' + firstPlan.id;
+    }
   }
   eventForm.value.capacity = selectedPackageMaxAttendees.value;
   initStaffAssignments();
@@ -4573,17 +4576,21 @@ onBeforeUnmount(stopScanner);
               </div>
             </label>
 
-            <!-- Option Các gói mở bán -->
+            <!-- Option Các gói mở bán / cấp riêng -->
             <label
-              v-for="plan in plans.filter(p => !p.is_trial && Number(p.price_vnd) > 0)"
+              v-for="plan in plans.filter(p => !p.is_trial)"
               :key="'plan_' + plan.id"
               class="pkg-card"
               :class="{ 'pkg-card-selected': eventForm.event_package_id === 'plan_' + plan.id }"
             >
               <input type="radio" :value="'plan_' + plan.id" v-model="eventForm.event_package_id" @change="syncPackageCapacity" class="sr-only" />
               <div class="pkg-header">
-                <span class="pkg-tag-buy">Gói mua mới</span>
-                <span class="pkg-price-amount">{{ Number(plan.price_vnd).toLocaleString('vi-VN') }} ₫</span>
+                <span :class="Number(plan.price_vnd) > 0 ? 'pkg-tag-buy' : 'pkg-tag-free'">
+                  {{ Number(plan.price_vnd) > 0 ? 'Gói mua mới' : (plan.for_all_tenants === false ? '🎁 Cấp riêng' : '🎁 Miễn phí') }}
+                </span>
+                <span :class="Number(plan.price_vnd) > 0 ? 'pkg-price-amount' : 'pkg-price-free'">
+                  {{ Number(plan.price_vnd) > 0 ? `${Number(plan.price_vnd).toLocaleString('vi-VN')} ₫` : '0 ₫' }}
+                </span>
               </div>
               <div class="pkg-name">{{ plan.name }}</div>
               <div class="pkg-stats">
@@ -4591,7 +4598,8 @@ onBeforeUnmount(stopScanner);
                 <span>👤 {{ plan.max_employees }} nhân sự</span>
                 <span>🔍 {{ plan.max_scanners }} soát vé</span>
               </div>
-              <div class="pkg-note-payment">⚡ Quét VietQR sau khi tạo</div>
+              <div v-if="Number(plan.price_vnd) > 0" class="pkg-note-payment">⚡ Quét VietQR sau khi tạo</div>
+              <div v-else class="pkg-badge-remaining">✅ Kích hoạt ngay (không cần thanh toán)</div>
             </label>
           </div>
         </div>
