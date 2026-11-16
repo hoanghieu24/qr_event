@@ -548,8 +548,19 @@ export class RegistrationsService {
     const params: any[] = [];
 
     if (user.type === 'TENANT_ADMIN') {
-      sql += ' AND e.tenant_id = ?';
-      params.push(user.tenantId || -1);
+      sql += ` AND (
+        e.tenant_id = ?
+        OR EXISTS (
+          SELECT 1 FROM staff_event_quotas q
+          WHERE q.event_id = r.event_id AND q.staff_id = ? AND q.is_enabled = 1
+            AND (
+              q.can_approve = 1
+              OR q.can_view_report = 1
+              OR (q.can_invite = 1 AND r.referrer_id = ?)
+            )
+        )
+      )`;
+      params.push(user.tenantId || -1, user.id, user.id);
     } else if (user.type === 'STAFF') {
       sql += ` AND EXISTS (
         SELECT 1 FROM staff_event_quotas q
@@ -585,7 +596,7 @@ export class RegistrationsService {
   static async approveRegistration(regId: number, staffUser: any) {
     // 1. Fetch registration details
     const rows = await query<any[]>(
-      `SELECT r.*, e.name as event_name, e.start_at as event_start_at, e.location as event_location,
+      `SELECT r.*, e.tenant_id as event_tenant_id, e.name as event_name, e.start_at as event_start_at, e.location as event_location,
               e.map_url as event_map_url, e.approval_mode as event_approval_mode,
               u_cust.email as customer_email, u_ref.name as referrer_name
        FROM registrations r
@@ -602,7 +613,11 @@ export class RegistrationsService {
 
     const reg = rows[0];
 
-    if (staffUser.type === 'STAFF') {
+    const isEventOwnerAdmin =
+      staffUser.type === 'ADMIN' ||
+      (staffUser.type === 'TENANT_ADMIN' && Number(reg.event_tenant_id) === Number(staffUser.tenantId));
+
+    if (!isEventOwnerAdmin) {
       const assignments = await query<any[]>(
         `SELECT can_approve, can_invite FROM staff_event_quotas
          WHERE event_id = ? AND staff_id = ? AND is_enabled = 1 LIMIT 1`,
@@ -623,8 +638,8 @@ export class RegistrationsService {
     }
 
     // Two-tier approval handling:
-    // If event is TWO_TIER and caller is NOT Admin/TenantAdmin and status is PENDING:
-    if (reg.event_approval_mode === 'TWO_TIER' && staffUser.type !== 'ADMIN' && staffUser.type !== 'TENANT_ADMIN' && reg.status === 'PENDING') {
+    // If event is TWO_TIER and caller is NOT event owner Admin/TenantAdmin and status is PENDING:
+    if (reg.event_approval_mode === 'TWO_TIER' && !isEventOwnerAdmin && reg.status === 'PENDING') {
       await query(
         `UPDATE registrations 
          SET status = 'PENDING_ADMIN', approved_by = ?, approved_at = NOW() 
@@ -716,7 +731,7 @@ export class RegistrationsService {
   // Staff rejects registration
   static async rejectRegistration(regId: number, staffUser: any, reason?: string) {
     const rows = await query<any[]>(
-      `SELECT r.*, e.name as event_name 
+      `SELECT r.*, e.tenant_id as event_tenant_id, e.name as event_name 
        FROM registrations r 
        JOIN events e ON r.event_id = e.id 
        WHERE r.id = ?`,
@@ -728,8 +743,11 @@ export class RegistrationsService {
     }
 
     const reg = rows[0];
+    const isEventOwnerAdmin =
+      staffUser.type === 'ADMIN' ||
+      (staffUser.type === 'TENANT_ADMIN' && Number(reg.event_tenant_id) === Number(staffUser.tenantId));
 
-    if (staffUser.type === 'STAFF') {
+    if (!isEventOwnerAdmin) {
       const assignments = await query<any[]>(
         `SELECT can_approve, can_invite FROM staff_event_quotas
          WHERE event_id = ? AND staff_id = ? AND is_enabled = 1 LIMIT 1`,

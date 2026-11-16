@@ -6,8 +6,9 @@ export class EventsController {
     try {
       const staffId = req.user && req.user.type === 'STAFF' ? req.user.id : undefined;
       const tenantId = req.user && req.user.type === 'TENANT_ADMIN' ? req.user.tenantId : undefined;
+      const userId = req.user?.id;
       const scope = req.query.scope as string | undefined;
-      const events = await EventsService.listEvents({ staffId, tenantId, scope });
+      const events = await EventsService.listEvents({ staffId, tenantId, userId, scope });
       res.json({ success: true, data: events });
     } catch (error: any) {
       res.status(400).json({ success: false, message: error.message });

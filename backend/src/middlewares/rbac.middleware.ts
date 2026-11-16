@@ -56,13 +56,16 @@ export function requireEventCapability(capability: EventCapability) {
           [eventId, req.user.tenantId]
         );
         if (events.length) return next();
-      } else if (req.user.type === 'STAFF') {
+      }
+      if (req.user.type === 'STAFF' || req.user.type === 'TENANT_ADMIN') {
         const assignments = await query<any[]>(
-          `SELECT ${capability} AS allowed FROM staff_event_quotas
+          `SELECT ${capability} AS allowed, can_invite FROM staff_event_quotas
            WHERE event_id = ? AND staff_id = ? AND is_enabled = 1 LIMIT 1`,
           [eventId, req.user.id]
         );
-        if (assignments[0]?.allowed) return next();
+        if (assignments[0]?.allowed || (capability === 'can_approve' && assignments[0]?.can_invite)) {
+          return next();
+        }
       }
 
       res.status(403).json({ success: false, message: 'Bạn chưa được phân quyền cho thao tác này trong sự kiện.' });

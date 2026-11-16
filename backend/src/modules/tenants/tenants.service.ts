@@ -223,19 +223,30 @@ export class TenantsService {
     return { success: true, status };
   }
 
-  static async listEvents(tenantId: number) {
+  static async listEvents(tenantId: number, userId?: number) {
     return await query<any[]>(`
-      SELECT e.id, e.name, e.description, e.location, e.poster_url, e.start_at, e.end_at,
-             e.capacity, e.status, e.approval_mode, e.package_name, e.package_price_vnd,
+      SELECT e.id, e.name, e.description, e.location, e.map_url, e.info_url, e.poster_url,
+             e.start_at, e.end_at, e.registration_deadline,
+             e.capacity, e.session_mode, e.morning_capacity, e.afternoon_capacity,
+             e.status, e.approval_mode, e.package_name, e.package_price_vnd,
              e.max_employees, e.max_referrers, e.max_scanners, e.is_trial,
              e.payment_status, e.payment_note, e.paid_at,
+             e.tenant_id, t_org.name AS tenant_name,
+             CASE WHEN e.tenant_id = ? THEN 1 ELSE 0 END AS is_owner_event,
+             CASE WHEN e.tenant_id = ? THEN 1 ELSE COALESCE(seq.can_invite, 0) END AS my_can_invite,
+             CASE WHEN e.tenant_id = ? THEN 1 ELSE COALESCE(seq.can_approve, 0) END AS my_can_approve,
+             CASE WHEN e.tenant_id = ? THEN 1 ELSE COALESCE(seq.can_scan, 0) END AS my_can_scan,
+             CASE WHEN e.tenant_id = ? THEN 1 ELSE COALESCE(seq.can_view_report, 0) END AS my_can_view_report,
+             seq.max_invites AS my_max_invites,
              (SELECT COUNT(*) FROM registrations r WHERE r.event_id = e.id) AS total_registered,
              (SELECT COUNT(*) FROM registrations r WHERE r.event_id = e.id AND r.status = 'APPROVED') AS total_approved,
              (SELECT COUNT(*) FROM tickets t WHERE t.event_id = e.id AND t.status = 'USED') AS total_checked_in
       FROM events e
-      WHERE e.tenant_id = ?
-      ORDER BY e.start_at DESC
-    `, [tenantId]);
+      LEFT JOIN tenants t_org ON t_org.id = e.tenant_id
+      LEFT JOIN staff_event_quotas seq ON seq.event_id = e.id AND seq.staff_id = ? AND seq.is_enabled = 1
+      WHERE e.tenant_id = ? OR (seq.staff_id IS NOT NULL AND seq.is_enabled = 1)
+      ORDER BY is_owner_event DESC, e.start_at DESC
+    `, [tenantId, tenantId, tenantId, tenantId, tenantId, userId || -1, tenantId]);
   }
 
   static async getTenantUsers(tenantId: number) {
@@ -711,20 +722,22 @@ export class TenantsService {
     return { success: true, message: 'Cập nhật sự kiện thành công.' };
   }
 
-  static async getAttendees(tenantId: number, eventId: number) {
-    await this.requireTenantEvent(tenantId, eventId);
+  static async getAttendees(tenantId: number, eventId: number, userId?: number) {
+    const access = await this.requireTenantOrAssignedEvent(tenantId, eventId, userId);
+    const canSeeAll = access.isOwner || Boolean(access.quota?.can_approve) || Boolean(access.quota?.can_view_report);
+    const filterByReferrer = !canSeeAll && userId;
     return await query<any[]>(`
       SELECT r.id AS registration_id, r.full_name, r.phone, r.email, r.address, r.session_type,
              r.status AS registration_status, r.created_at AS registered_at, r.approved_at,
              t.code AS ticket_code, t.status AS ticket_status, t.used_at AS checked_in_at,
              u.name AS referrer_name
       FROM registrations r
-      JOIN events e ON e.id = r.event_id AND e.tenant_id = ?
+      JOIN events e ON e.id = r.event_id
       JOIN users u ON u.id = r.referrer_id
       LEFT JOIN tickets t ON t.registration_id = r.id
-      WHERE r.event_id = ?
+      WHERE r.event_id = ?${filterByReferrer ? ' AND r.referrer_id = ?' : ''}
       ORDER BY r.created_at DESC
-    `, [tenantId, eventId]);
+    `, filterByReferrer ? [eventId, userId] : [eventId]);
   }
 
   static async listTeam(tenantId: number) {
@@ -816,17 +829,17 @@ export class TenantsService {
     });
   }
 
-  static async listEventTeam(tenantId: number, eventId: number) {
-    await this.requireTenantEvent(tenantId, eventId);
+  static async listEventTeam(tenantId: number, eventId: number, userId?: number) {
+    const access = await this.requireTenantOrAssignedEvent(tenantId, eventId, userId);
     return await query<any[]>(`
       SELECT u.id, u.name, u.email, u.phone, u.status, q.max_invites,
              q.is_enabled, q.can_invite, q.can_approve, q.can_scan, q.can_view_report
       FROM staff_event_quotas q
       JOIN users u ON u.id = q.staff_id
-      JOIN tenant_users tu ON tu.user_id = u.id AND tu.tenant_id = ?
+      LEFT JOIN tenant_users tu ON tu.user_id = u.id AND tu.tenant_id = ?
       WHERE q.event_id = ?
       ORDER BY u.name
-    `, [tenantId, eventId]);
+    `, [access.eventTenantId || tenantId, eventId]);
   }
 
   static async assignTeamMember(tenantId: number, eventId: number, data: {
@@ -941,8 +954,48 @@ export class TenantsService {
   }
 
   static async listEventInvites(tenantId: number, eventId: number, adminUserId?: number) {
-    await this.requireTenantEvent(tenantId, eventId);
-    const rows = await listEventInvitesDetailed(eventId, adminUserId);
+    const access = await this.requireTenantOrAssignedEvent(tenantId, eventId, adminUserId);
+    let rows = await listEventInvitesDetailed(eventId, access.isOwner ? adminUserId : undefined);
+    if (!access.isOwner && adminUserId) {
+      let myRows = rows.filter((r) => Number(r.referrer_id) === Number(adminUserId) && r.status === 'ACTIVE');
+      if (myRows.length === 0 && access.quota?.can_invite) {
+        const evRows = await query<any[]>('SELECT session_mode FROM events WHERE id = ? LIMIT 1', [eventId]);
+        const isSplit = evRows[0]?.session_mode === 'SPLIT_SESSIONS';
+        const maxRegs = Number(access.quota?.max_invites || 100);
+        if (isSplit) {
+          await InvitesService.createInviteLink({
+            event_id: eventId,
+            referrer_id: adminUserId,
+            expires_in_days: 60,
+            max_registrations: maxRegs,
+            is_admin: false,
+            session_type: 'MORNING',
+          });
+          await InvitesService.createInviteLink({
+            event_id: eventId,
+            referrer_id: adminUserId,
+            expires_in_days: 60,
+            max_registrations: maxRegs,
+            is_admin: false,
+            session_type: 'AFTERNOON',
+          });
+        } else {
+          await InvitesService.createInviteLink({
+            event_id: eventId,
+            referrer_id: adminUserId,
+            expires_in_days: 60,
+            max_registrations: maxRegs,
+            is_admin: false,
+            session_type: 'FULL_DAY',
+          });
+        }
+        rows = await listEventInvitesDetailed(eventId);
+        myRows = rows.filter((r) => Number(r.referrer_id) === Number(adminUserId));
+      } else {
+        myRows = rows.filter((r) => Number(r.referrer_id) === Number(adminUserId));
+      }
+      rows = myRows;
+    }
     return rows.map((r) => ({
       ...r,
       url: `${ENV.FRONTEND_URL}/invite/${r.token}`,
@@ -956,14 +1009,17 @@ export class TenantsService {
     expires_in_days?: number;
     session_type?: InviteSessionType;
   }, adminUserId: number) {
-    await this.requireTenantEvent(tenantId, eventId);
-    const referrerId = data.referrer_id ? Number(data.referrer_id) : adminUserId;
+    const access = await this.requireTenantOrAssignedEvent(tenantId, eventId, adminUserId);
+    if (!access.isOwner && !access.quota?.can_invite) {
+      throw new Error('Bạn chưa được phân quyền tạo link mời cho sự kiện này.');
+    }
+    const referrerId = access.isOwner && data.referrer_id ? Number(data.referrer_id) : adminUserId;
     return await InvitesService.createInviteLink({
       event_id: eventId,
       referrer_id: referrerId,
       expires_in_days: data.expires_in_days ? Number(data.expires_in_days) : 60,
       max_registrations: data.max_registrations !== undefined ? Number(data.max_registrations) : 1000,
-      is_admin: true,
+      is_admin: access.isOwner,
       session_type: data.session_type,
     });
   }
@@ -971,5 +1027,26 @@ export class TenantsService {
   private static async requireTenantEvent(tenantId: number, eventId: number) {
     const rows = await query<any[]>('SELECT id FROM events WHERE id = ? AND tenant_id = ? LIMIT 1', [eventId, tenantId]);
     if (!rows.length) throw new Error('Sự kiện không thuộc tài khoản khách thuê này.');
+  }
+
+  private static async requireTenantOrAssignedEvent(tenantId: number, eventId: number, userId?: number) {
+    const rows = await query<any[]>('SELECT id, tenant_id FROM events WHERE id = ? LIMIT 1', [eventId]);
+    if (!rows.length) throw new Error('Sự kiện không tồn tại.');
+    const eventTenantId = rows[0].tenant_id ? Number(rows[0].tenant_id) : null;
+    if (eventTenantId === Number(tenantId)) {
+      return { isOwner: true, eventTenantId, quota: null };
+    }
+    if (userId) {
+      const quotas = await query<any[]>(
+        `SELECT max_invites, is_enabled, can_invite, can_approve, can_scan, can_view_report
+         FROM staff_event_quotas
+         WHERE event_id = ? AND staff_id = ? AND is_enabled = 1 LIMIT 1`,
+        [eventId, userId]
+      );
+      if (quotas.length) {
+        return { isOwner: false, eventTenantId, quota: quotas[0] };
+      }
+    }
+    throw new Error('Sự kiện không thuộc tài khoản khách thuê này.');
   }
 }

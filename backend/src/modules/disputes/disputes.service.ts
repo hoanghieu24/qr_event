@@ -65,8 +65,15 @@ export class DisputesService {
 
     if (user && user.type !== 'ADMIN') {
       if (user.tenantId) {
-        sql += ' AND e.tenant_id = ?';
-        params.push(user.tenantId);
+        sql += ` AND (
+          e.tenant_id = ?
+          OR d.recorded_by = ?
+          OR EXISTS (
+            SELECT 1 FROM staff_event_quotas seq
+            WHERE seq.event_id = e.id AND seq.staff_id = ? AND seq.is_enabled = 1
+          )
+        )`;
+        params.push(user.tenantId, user.id, user.id);
       } else if (user.type === 'STAFF') {
         sql += ` AND (d.recorded_by = ? OR EXISTS (
           SELECT 1 FROM staff_event_quotas seq

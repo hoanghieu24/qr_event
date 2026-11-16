@@ -596,6 +596,7 @@ const syncPackageCapacity = () => {
 
 const sessionPrimaryLinks = computed(() => {
   const ev = selectedEvent.value;
+  const isAssignedStaffEvent = ev && Number(ev.is_owner_event) === 0;
   const normalized = (tenantEventInvites.value || []).map((inv: any) => ({
     ...inv,
     session_type: inv.session_type || 'FULL_DAY',
@@ -607,6 +608,7 @@ const sessionPrimaryLinks = computed(() => {
       .map((sType) => {
         const matches = normalized.filter((inv: any) => inv.session_type === sType);
         const picked =
+          (isAssignedStaffEvent && matches.find((inv: any) => inv.status === 'ACTIVE' && Number(inv.referrer_id) === Number(user.value?.id))) ||
           matches.find((inv: any) => inv.status === 'ACTIVE' && !inv.referrer_id) ||
           matches.find((inv: any) => inv.status === 'ACTIVE') ||
           matches[0];
@@ -621,17 +623,21 @@ const sessionPrimaryLinks = computed(() => {
       .filter(Boolean);
   }
 
-  if (tenantActiveInviteLink.value) {
+  const primaryFullDay =
+    (isAssignedStaffEvent && normalized.find((inv: any) => inv.status === 'ACTIVE' && Number(inv.referrer_id) === Number(user.value?.id))) ||
+    tenantActiveInviteLink.value;
+
+  if (primaryFullDay) {
     return [
       {
-        ...tenantActiveInviteLink.value,
-        session_type: tenantActiveInviteLink.value.session_type || 'FULL_DAY',
-        session_capacity: ev?.capacity ?? tenantActiveInviteLink.value.max_registrations,
+        ...primaryFullDay,
+        session_type: primaryFullDay.session_type || 'FULL_DAY',
+        session_capacity: isAssignedStaffEvent ? (primaryFullDay.max_registrations ?? ev?.capacity) : (ev?.capacity ?? primaryFullDay.max_registrations),
         session_registered:
-          tenantActiveInviteLink.value.current_session_registrations ??
+          primaryFullDay.current_session_registrations ??
           ev?.registered_count ??
-          tenantActiveInviteLink.value.total_registered ??
-          tenantActiveInviteLink.value.current_registrations ??
+          primaryFullDay.total_registered ??
+          primaryFullDay.current_registrations ??
           0,
       },
     ];
@@ -3337,7 +3343,9 @@ onBeforeUnmount(stopScanner);
               <div v-if="events.length" class="event-picker-wrap">
                 <CalendarDays :size="17" />
                 <select v-model.number="selectedScannerEventId" @change="scannerResult = null">
-                  <option v-for="ev in events" :key="ev.id" :value="ev.id">{{ ev.name }}</option>
+                  <option v-for="ev in events" :key="ev.id" :value="ev.id">
+                    {{ Number(ev.is_owner_event) === 0 ? `🤝 [Được phân quyền] ${ev.name}` : ev.name }}
+                  </option>
                 </select>
                 <ChevronDown :size="15" />
               </div>
@@ -3615,6 +3623,7 @@ onBeforeUnmount(stopScanner);
                   </p>
                 </div>
                 <button
+                  v-if="Number(selectedEvent.is_owner_event) !== 0"
                   class="secondary-button"
                   :disabled="eventEmployeeCount >= selectedEvent.max_employees || selectedEvent.status !== 'PUBLISHED'"
                   @click="errorMessage = ''; showAssignmentModal = true"
@@ -3677,14 +3686,16 @@ onBeforeUnmount(stopScanner);
                     :value="selectedEvent.id"
                     @change="loadEventDetails(events.find((event) => event.id === Number(($event.target as HTMLSelectElement).value)))"
                   >
-                    <option v-for="event in events" :key="event.id" :value="event.id">{{ event.name }}</option>
+                    <option v-for="event in events" :key="event.id" :value="event.id">
+                      {{ Number(event.is_owner_event) === 0 ? `🤝 [Được phân quyền] ${event.name}` : event.name }}
+                    </option>
                   </select>
                   <ChevronDown :size="15" />
                 </div>
               </div>
 
               <!-- BANNER CHỜ THANH TOÁN GÓI -->
-              <div v-if="selectedEvent.payment_status === 'PENDING_PAYMENT'" class="payment-alert-card">
+              <div v-if="selectedEvent.payment_status === 'PENDING_PAYMENT' && Number(selectedEvent.is_owner_event) !== 0" class="payment-alert-card">
                 <div class="payment-alert-left">
                   <div class="payment-alert-icon">⏳</div>
                   <div>
@@ -3708,7 +3719,13 @@ onBeforeUnmount(stopScanner);
                     {{ selectedEvent.status === 'PUBLISHED' ? 'Đang mở' : selectedEvent.status }}
                   </span>
                   <span
-                    v-if="selectedEvent.payment_status === 'PENDING_PAYMENT'"
+                    v-if="Number(selectedEvent.is_owner_event) === 0"
+                    class="status-pill status-blue"
+                  >
+                    🤝 Được phân quyền · {{ selectedEvent.tenant_name || 'Đơn vị khác' }}
+                  </span>
+                  <span
+                    v-if="selectedEvent.payment_status === 'PENDING_PAYMENT' && Number(selectedEvent.is_owner_event) !== 0"
                     class="status-pill status-amber cursor-pointer"
                     title="Bấm để quét mã thanh toán"
                     @click="openPaymentModal(selectedEvent)"
@@ -3716,7 +3733,7 @@ onBeforeUnmount(stopScanner);
                     ⏳ Chờ thanh toán ({{ Number(selectedEvent.package_price_vnd).toLocaleString('vi-VN') }} ₫)
                   </span>
                   <span
-                    v-else-if="Number(selectedEvent.package_price_vnd) > 0"
+                    v-else-if="Number(selectedEvent.package_price_vnd) > 0 && Number(selectedEvent.is_owner_event) !== 0"
                     class="status-pill status-green"
                   >
                     ✅ Đã thanh toán
@@ -3736,9 +3753,10 @@ onBeforeUnmount(stopScanner);
                   <div class="event-meta">
                     <span><MapPin :size="15" />{{ selectedEvent.location }}</span>
                     <span><Clock3 :size="15" />{{ formatDate(selectedEvent.start_at) }}</span>
-                    <span>{{ selectedEvent.package_name }} · {{ eventPackagePrice(selectedEvent) }}</span>
+                    <span v-if="Number(selectedEvent.is_owner_event) !== 0">{{ selectedEvent.package_name }} · {{ eventPackagePrice(selectedEvent) }}</span>
+                    <span v-else-if="selectedEvent.my_max_invites">Hạn mức mời của bạn: {{ selectedEvent.my_max_invites }} khách</span>
                   </div>
-                  <div class="flex items-center gap-2 mt-3">
+                  <div v-if="Number(selectedEvent.is_owner_event) !== 0" class="flex items-center gap-2 mt-3">
                     <button type="button" class="px-2.5 py-1.5 rounded-lg border border-white/30 text-xs font-bold text-white hover:bg-white/10 flex items-center gap-1.5 transition cursor-pointer" @click="openEditEventModal(selectedEvent)">
                       <Edit3 :size="13" /> Sửa thông tin
                     </button>
@@ -3907,7 +3925,9 @@ onBeforeUnmount(stopScanner);
                     :value="selectedEvent.id"
                     @change="loadEventDetails(events.find((event) => event.id === Number(($event.target as HTMLSelectElement).value)))"
                   >
-                    <option v-for="event in events" :key="event.id" :value="event.id">{{ event.name }}</option>
+                    <option v-for="event in events" :key="event.id" :value="event.id">
+                      {{ Number(event.is_owner_event) === 0 ? `🤝 [Được phân quyền] ${event.name}` : event.name }}
+                    </option>
                   </select>
                   <ChevronDown :size="15" />
                 </div>
@@ -3986,7 +4006,9 @@ onBeforeUnmount(stopScanner);
                     :value="selectedEvent.id"
                     @change="loadEventDetails(events.find((event) => event.id === Number(($event.target as HTMLSelectElement).value)))"
                   >
-                    <option v-for="event in events" :key="event.id" :value="event.id">{{ event.name }}</option>
+                    <option v-for="event in events" :key="event.id" :value="event.id">
+                      {{ Number(event.is_owner_event) === 0 ? `🤝 [Được phân quyền] ${event.name}` : event.name }}
+                    </option>
                   </select>
                   <ChevronDown :size="15" />
                 </div>

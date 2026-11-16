@@ -102,7 +102,7 @@ export class TenantsController {
 
   static async events(req: Request, res: Response) {
     try {
-      res.json({ success: true, data: await TenantsService.listEvents(Number(req.user!.tenantId)) });
+      res.json({ success: true, data: await TenantsService.listEvents(Number(req.user!.tenantId), Number(req.user!.id)) });
     } catch (error: any) {
       res.status(400).json({ success: false, message: error.message });
     }
@@ -193,7 +193,7 @@ export class TenantsController {
 
   static async attendees(req: Request, res: Response) {
     try {
-      res.json({ success: true, data: await TenantsService.getAttendees(Number(req.user!.tenantId), Number(req.params.eventId)) });
+      res.json({ success: true, data: await TenantsService.getAttendees(Number(req.user!.tenantId), Number(req.params.eventId), Number(req.user!.id)) });
     } catch (error: any) {
       res.status(404).json({ success: false, message: error.message });
     }
@@ -239,7 +239,7 @@ export class TenantsController {
 
   static async eventTeam(req: Request, res: Response) {
     try {
-      res.json({ success: true, data: await TenantsService.listEventTeam(Number(req.user!.tenantId), Number(req.params.eventId)) });
+      res.json({ success: true, data: await TenantsService.listEventTeam(Number(req.user!.tenantId), Number(req.params.eventId), Number(req.user!.id)) });
     } catch (error: any) {
       res.status(404).json({ success: false, message: error.message });
     }

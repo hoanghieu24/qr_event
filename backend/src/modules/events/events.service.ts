@@ -12,9 +12,10 @@ import {
 } from '../../utils/eventSessions';
 
 export class EventsService {
-  static async listEvents(options?: { staffId?: number; tenantId?: number; scope?: string }) {
+  static async listEvents(options?: { staffId?: number; tenantId?: number; userId?: number; scope?: string }) {
     const staffId = options?.staffId;
     const tenantId = options?.tenantId;
+    const userId = options?.userId;
     const scope = options?.scope;
 
     const whereClauses: string[] = [];
@@ -23,9 +24,8 @@ export class EventsService {
       whereClauses.push("e.status = 'PUBLISHED'");
     }
 
-    if (tenantId) whereClauses.push('e.tenant_id = ?');
-
     if (staffId) {
+      if (tenantId) whereClauses.push('e.tenant_id = ?');
       // Staff member: must be explicitly assigned and enabled in staff_event_quotas
       const whereSql = whereClauses.length > 0 ? 'AND ' + whereClauses.join(' AND ') : '';
       return await query(`
@@ -49,6 +49,30 @@ export class EventsService {
       `, tenantId ? [staffId, tenantId] : [staffId]);
     }
 
+    if (tenantId) {
+      whereClauses.push('(e.tenant_id = ? OR (q.staff_id IS NOT NULL AND q.is_enabled = 1))');
+      const whereSql = whereClauses.length > 0 ? 'WHERE ' + whereClauses.join(' AND ') : '';
+      return await query(`
+        SELECT e.*, u.name as creator_name, tn.name as tenant_name,
+          (SELECT COUNT(*) FROM registrations r WHERE r.event_id = e.id) as total_registrations,
+          (SELECT COUNT(*) FROM tickets t WHERE t.event_id = e.id) as total_tickets,
+          (SELECT COUNT(*) FROM tickets t WHERE t.event_id = e.id AND t.status = 'USED') as total_checked_in,
+          CASE WHEN e.tenant_id = ? THEN 1 ELSE 0 END as is_owner_event,
+          CASE WHEN e.tenant_id = ? THEN 1 ELSE COALESCE(q.can_scan, 0) END as my_can_scan,
+          CASE WHEN e.tenant_id = ? THEN 1 ELSE COALESCE(q.can_invite, 0) END as my_can_invite,
+          CASE WHEN e.tenant_id = ? THEN 1 ELSE GREATEST(COALESCE(q.can_approve, 0), COALESCE(q.can_invite, 0)) END as my_can_approve,
+          CASE WHEN e.tenant_id = ? THEN 1 ELSE COALESCE(q.can_view_report, 0) END as my_can_view_report,
+          q.max_invites as my_max_invites,
+          (e.end_at < NOW()) as is_expired
+        FROM events e
+        JOIN users u ON e.created_by = u.id
+        LEFT JOIN tenants tn ON tn.id = e.tenant_id
+        LEFT JOIN staff_event_quotas q ON q.event_id = e.id AND q.staff_id = ? AND q.is_enabled = 1
+        ${whereSql}
+        ORDER BY is_owner_event DESC, e.start_at DESC
+      `, [tenantId, tenantId, tenantId, tenantId, tenantId, userId || -1, tenantId]);
+    }
+
     const whereSql = whereClauses.length > 0 ? 'WHERE ' + whereClauses.join(' AND ') : '';
     return await query(`
       SELECT e.*, u.name as creator_name, tn.name as tenant_name,
@@ -65,7 +89,7 @@ export class EventsService {
       LEFT JOIN tenants tn ON tn.id = e.tenant_id
       ${whereSql}
       ORDER BY e.start_at DESC
-    `, tenantId ? [tenantId] : []);
+    `, []);
   }
 
   static async deleteEvent(id: number) {
