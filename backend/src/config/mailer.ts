@@ -110,6 +110,39 @@ function isTimeoutOrBlockedError(error: any): boolean {
   );
 }
 
+function htmlToPlainText(html: string): string {
+  return String(html || '')
+    .replace(/<style[\s\S]*?<\/style>/gi, '')
+    .replace(/<script[\s\S]*?<\/script>/gi, '')
+    .replace(/<\/(p|div|h[1-6]|li|tr|br)>/gi, '\n')
+    .replace(/<br\s*\/?>/gi, '\n')
+    .replace(/<[^>]+>/g, '')
+    .replace(/&nbsp;/gi, ' ')
+    .replace(/&amp;/gi, '&')
+    .replace(/&lt;/gi, '<')
+    .replace(/&gt;/gi, '>')
+    .replace(/\n{3,}/g, '\n\n')
+    .trim();
+}
+
+export function formatFriendlySmtpError(rawError?: string, userEmail?: string): string {
+  const clean = String(rawError || 'Lỗi gửi email SMTP.')
+    .replace(/<[^>]+>/g, '')
+    .replace(/\s+/g, ' ')
+    .trim();
+
+  if (/550\s+5\.4\.6|Unusual sending activity detected/i.test(clean)) {
+    const accountLabel = userEmail ? ` (${userEmail})` : '';
+    return `Tài khoản Zoho Mail${accountLabel} đang bị Zoho tạm khóa chiều gửi đi do gửi tự động từ máy chủ đám mây (Mã lỗi Zoho: 550 5.4.6 Unusual sending activity). 👉 Cách khắc phục ngay: (1) Truy cập https://mail.zoho.com/UnblockMe và đăng nhập ${userEmail || 'tài khoản Zoho'} để bấm mở khóa (Unblock), hoặc (2) Chuyển sang dùng Gmail App Password (Host: smtp.gmail.com, Cổng: 465 hoặc 587).`;
+  }
+
+  if (/535|Authentication Failed|Invalid credentials|Username and Password not accepted/i.test(clean)) {
+    return `Sai tài khoản hoặc Mật khẩu ứng dụng (App Password) SMTP (${clean}). Vui lòng kiểm tra lại mật khẩu ứng dụng 16 ký tự.`;
+  }
+
+  return clean;
+}
+
 /**
  * Resolve effective SMTP configuration: prefers non-placeholder values saved in
  * `system_settings` (Admin Settings UI), falling back to environment variables.
@@ -306,10 +339,13 @@ export async function sendEmailWithCustomConfig(
         },
       });
 
+      const plainText = htmlToPlainText(html);
       const info = await transporter.sendMail({
         from: `"${effectiveConfig.fromName}" <${effectiveConfig.fromEmail}>`,
+        replyTo: effectiveConfig.fromEmail,
         to,
         subject,
+        text: plainText,
         html,
         attachments,
       });
@@ -322,7 +358,7 @@ export async function sendEmailWithCustomConfig(
         return {
           sent: false,
           simulated: false,
-          error: directError?.message || 'Lỗi gửi email SMTP.',
+          error: formatFriendlySmtpError(directError?.message, effectiveConfig.user),
         };
       }
       console.warn(`[SMTP DIRECT BLOCKED/TIMEOUT] Falling back to HTTPS relay (${relayUrl}): ${directError?.message}`);
@@ -340,7 +376,7 @@ export async function sendEmailWithCustomConfig(
     return {
       sent: false,
       simulated: false,
-      error: relayError?.message || 'Lỗi gửi email qua SMTP relay.',
+      error: formatFriendlySmtpError(relayError?.message, effectiveConfig.user),
     };
   }
 }

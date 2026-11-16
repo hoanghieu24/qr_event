@@ -114,13 +114,24 @@ export default async function handler(req, res) {
           }))
       : undefined;
 
-    const cleanFromName = String(fromName || 'KTSQR Event System').replace(/"/g, '').trim();
+    const cleanFromName = String(fromName || 'EventGo').replace(/"/g, '').trim();
     const cleanFromEmail = String(fromEmail || user).trim();
+    const plainText = String(html || '')
+      .replace(/<style[\s\S]*?<\/style>/gi, '')
+      .replace(/<script[\s\S]*?<\/script>/gi, '')
+      .replace(/<\/(p|div|h[1-6]|li|tr|br)>/gi, '\n')
+      .replace(/<br\s*\/?>/gi, '\n')
+      .replace(/<[^>]+>/g, '')
+      .replace(/&nbsp;/gi, ' ')
+      .replace(/\n{3,}/g, '\n\n')
+      .trim();
 
     const info = await transporter.sendMail({
       from: `"${cleanFromName}" <${cleanFromEmail}>`,
+      replyTo: cleanFromEmail,
       to: String(to).trim(),
       subject: String(subject),
+      text: plainText,
       html: String(html),
       attachments: normalizedAttachments,
     });

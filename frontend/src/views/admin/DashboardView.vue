@@ -3122,6 +3122,35 @@ const formatOtpTime = (dateStr: string) => {
           </div>
 
           <div class="space-y-3.5 text-xs">
+            <div class="flex flex-wrap items-center gap-1.5">
+              <span class="text-[11px] font-semibold text-slate-500">Cấu hình nhanh:</span>
+              <button
+                type="button"
+                @click="systemSettings.smtp_host = 'smtp.gmail.com'; systemSettings.smtp_port = '465'"
+                class="px-2.5 py-1 rounded-lg border text-[11px] font-bold transition cursor-pointer"
+                :class="systemSettings.smtp_host === 'smtp.gmail.com' ? 'bg-primary-50 border-primary-300 text-primary-700' : 'bg-slate-50 border-slate-200 text-slate-600 hover:bg-slate-100'"
+              >
+                Gmail (smtp.gmail.com · 465)
+              </button>
+              <button
+                type="button"
+                @click="systemSettings.smtp_host = 'smtp.zoho.com'; systemSettings.smtp_port = '465'"
+                class="px-2.5 py-1 rounded-lg border text-[11px] font-bold transition cursor-pointer"
+                :class="systemSettings.smtp_host === 'smtp.zoho.com' ? 'bg-primary-50 border-primary-300 text-primary-700' : 'bg-slate-50 border-slate-200 text-slate-600 hover:bg-slate-100'"
+              >
+                Zoho Mail (smtp.zoho.com · 465)
+              </button>
+              <a
+                v-if="String(systemSettings.smtp_host || '').includes('zoho')"
+                href="https://mail.zoho.com/UnblockMe"
+                target="_blank"
+                rel="noopener noreferrer"
+                class="px-2.5 py-1 rounded-lg bg-amber-50 border border-amber-200 text-amber-800 text-[11px] font-bold hover:bg-amber-100 transition"
+              >
+                🔓 Mở khóa Zoho (UnblockMe)
+              </a>
+            </div>
+
             <div class="grid grid-cols-3 gap-3">
               <div class="col-span-2">
                 <label class="block font-bold text-slate-700 mb-1">Máy chủ SMTP Host</label>
@@ -3195,9 +3224,22 @@ const formatOtpTime = (dateStr: string) => {
             <div
               v-if="testEmailResult"
               :class="testEmailResult.success ? 'text-emerald-700 bg-emerald-50 border-emerald-200' : 'text-rose-700 bg-rose-50 border-rose-200'"
-              class="p-2 rounded-xl border text-[11px] font-medium mt-1"
+              class="p-2.5 rounded-xl border text-[11px] font-medium mt-1 space-y-1.5"
             >
-              {{ testEmailResult.message }}
+              <div>{{ testEmailResult.message }}</div>
+              <div
+                v-if="!testEmailResult.success && (String(testEmailResult.message).includes('550') || String(testEmailResult.message).includes('Zoho'))"
+                class="pt-1 flex flex-wrap items-center gap-2"
+              >
+                <a
+                  href="https://mail.zoho.com/UnblockMe"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  class="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-white border border-rose-300 text-rose-700 font-bold hover:bg-rose-100 transition"
+                >
+                  🔓 Bấm vào đây để Mở khóa Zoho Mail (UnblockMe)
+                </a>
+              </div>
             </div>
           </div>
         </div>
