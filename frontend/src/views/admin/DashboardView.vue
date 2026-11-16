@@ -19,7 +19,6 @@ import {
   Ticket,
   CheckCircle2,
   AlertTriangle,
-  UserCheck,
   Search,
   Download,
   Plus,
@@ -31,17 +30,10 @@ import {
   MapPin,
   RotateCw,
   Building,
-  Filter,
   TrendingUp,
-  FileSpreadsheet,
   X,
-  ChevronRight,
   User,
-  Shield,
-  Layers,
   Sparkles,
-  ExternalLink,
-  ChevronDown,
   Settings,
   Mail,
   Sliders,
@@ -49,16 +41,12 @@ import {
   Award,
   Zap,
   Activity,
-  Radio,
   Check,
-  UserX,
-  QrCode,
   Crown,
   Copy,
   Building2,
   Phone,
   UserPlus,
-  Briefcase,
   Pencil,
   Link2
 } from 'lucide-vue-next';
@@ -356,22 +344,6 @@ const saveAdminEditEvent = async () => {
     alert(error.response?.data?.message || error.message);
   } finally {
     adminEditSaving.value = false;
-  }
-};
-
-const getGpsCoordsForNewEvent = () => {
-  if ('geolocation' in navigator) {
-    navigator.geolocation.getCurrentPosition(
-      (pos) => {
-        newEvent.value.latitude = parseFloat(pos.coords.latitude.toFixed(6));
-        newEvent.value.longitude = parseFloat(pos.coords.longitude.toFixed(6));
-        alert(`Đã lấy vị trí hiện tại: ${newEvent.value.latitude}, ${newEvent.value.longitude}`);
-      },
-      (err) => alert(`Không thể lấy vị trí GPS: ${err.message}`),
-      { enableHighAccuracy: true }
-    );
-  } else {
-    alert('Trình duyệt không hỗ trợ Geolocation API.');
   }
 };
 

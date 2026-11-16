@@ -13,7 +13,6 @@ import {
   Loader2,
   PartyPopper,
   Ticket,
-  QrCode,
   LogOut,
   ArrowRight,
   KeyRound,

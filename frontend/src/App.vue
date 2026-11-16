@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue';
 import { useRouter, useRoute } from 'vue-router';
-import { ScanLine, Users, ShieldAlert, LayoutDashboard, Ticket, LogOut, QrCode, ChevronDown, Loader2 } from 'lucide-vue-next';
+import { ScanLine, Users, ShieldAlert, LayoutDashboard, Ticket, LogOut, ChevronDown, Loader2 } from 'lucide-vue-next';
 import { useAuthStore } from './stores/auth';
 import { backendWarmState } from './api/client';
 import {

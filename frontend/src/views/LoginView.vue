@@ -2,7 +2,6 @@
 import { ref } from 'vue';
 import { useRouter, useRoute } from 'vue-router';
 import {
-  QrCode,
   Mail,
   Lock,
   Eye,
@@ -14,8 +13,7 @@ import {
   Sparkles,
   Phone,
   User,
-  Loader2,
-  CheckCircle2
+  Loader2
 } from 'lucide-vue-next';
 import { useAuthStore } from '../stores/auth';
 import api from '../api/client';

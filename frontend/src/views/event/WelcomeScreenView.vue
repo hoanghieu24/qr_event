@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, computed, onMounted, onUnmounted } from 'vue';
+import { ref, onMounted, onUnmounted } from 'vue';
 import { useRoute } from 'vue-router';
 import api from '../../api/client';
 import { getSocket } from '../../api/socket';
@@ -14,7 +14,6 @@ import {
   Clock,
   Ticket,
   CheckCircle2,
-  Gift,
   RotateCw,
   Award,
   Crown

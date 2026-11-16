@@ -3,16 +3,13 @@ import { ref } from 'vue';
 import { useRouter, useRoute } from 'vue-router';
 import {
   ShieldAlert,
-  ShieldCheck,
   Lock,
   Mail,
   Eye,
   EyeOff,
   ArrowRight,
   Loader2,
-  KeyRound,
-  Server,
-  QrCode
+  Server
 } from 'lucide-vue-next';
 import { useAuthStore } from '../../stores/auth';
 import { navigateWithFallback, sanitizeRedirectPath } from '../../utils/authSession';

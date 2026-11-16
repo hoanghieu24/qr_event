@@ -12,7 +12,6 @@ import {
   AlertTriangle,
   RotateCw,
   Search,
-  MessageSquare,
   X,
   Send,
   Ticket

@@ -4,7 +4,6 @@ import { useRouter } from 'vue-router';
 import { Html5Qrcode } from 'html5-qrcode';
 import api from '../../api/client';
 import { useAuthStore } from '../../stores/auth';
-import { isTenantMode, isAdminMode } from '../../utils/portalMode';
 import { navigateWithFallback, performLogoutAndRedirect } from '../../utils/authSession';
 import InviteCardModal from '../../components/InviteCardModal.vue';
 import SessionAllocationField from '../../components/SessionAllocationField.vue';
@@ -26,9 +25,7 @@ import {
   ChevronDown,
   CircleUserRound,
   Clock3,
-  KeyRound,
   LogOut,
-  Mail,
   MapPin,
   PackageCheck,
   Plus,
@@ -39,7 +36,6 @@ import {
   Trash2,
   Users,
   X,
-  ArrowLeft,
   Tag,
   CreditCard,
   Copy,
@@ -53,7 +49,6 @@ import {
   BarChart3,
   Loader2,
   RefreshCw,
-  Keyboard,
   Scale,
   Send,
   Share2,
@@ -74,9 +69,6 @@ const authStore = useAuthStore();
 
 const token = ref(authStore.token || localStorage.getItem('token') || '');
 const user = ref<any>(authStore.user || null);
-const email = ref('');
-const password = ref('');
-const loginBusy = ref(false);
 const loading = ref(false);
 const errorMessage = ref('');
 const events = ref<any[]>([]);
@@ -1038,73 +1030,6 @@ const openEventModal = (packageId?: number | string) => {
   showEventModal.value = true;
 };
 
-const login = async () => {
-  loginBusy.value = true;
-  errorMessage.value = '';
-  try {
-    const res = await api.post('/auth/login', {
-      email: email.value.trim(),
-      password: password.value
-    });
-    const account = res.data.data.user;
-    const tenantAdmin = account.type === 'TENANT_ADMIN';
-    const isTenantStaff = account.type === 'STAFF';
-    if (!tenantAdmin && !isTenantStaff)
-      throw new Error('Tài khoản này chưa được cấp quyền vào cổng khách thuê hoặc không gian nhân sự.');
-
-    token.value = res.data.data.token;
-    user.value = account;
-    authStore.setSession(token.value, account);
-
-    password.value = '';
-    if (isTenantStaff) {
-      await loadStaffPortal();
-    } else {
-      await loadPortal();
-    }
-  } catch (error: any) {
-    errorMessage.value = explainError(error);
-  } finally {
-    loginBusy.value = false;
-  }
-};
-
-const isTenantRegister = ref(false);
-const tenantRegForm = ref({
-  name: '',
-  contact_name: '',
-  email: '',
-  phone: '',
-  password: ''
-});
-const tenantRegBusy = ref(false);
-
-const registerTenantAccount = async () => {
-  errorMessage.value = '';
-  if (!tenantRegForm.value.name.trim() || !tenantRegForm.value.email.trim() || !tenantRegForm.value.password) {
-    errorMessage.value = 'Vui lòng điền đủ tên đơn vị, email và mật khẩu.';
-    return;
-  }
-  if (tenantRegForm.value.password.length < 8) {
-    errorMessage.value = 'Mật khẩu cần ít nhất 8 ký tự.';
-    return;
-  }
-  tenantRegBusy.value = true;
-  try {
-    const res = await api.post('/tenants/register', tenantRegForm.value);
-    const { token: t, user: u } = res.data.data;
-    token.value = t;
-    user.value = u;
-    authStore.setSession(t, u);
-    tenantRegForm.value = { name: '', contact_name: '', email: '', phone: '', password: '' };
-    await loadPortal();
-  } catch (error: any) {
-    errorMessage.value = explainError(error);
-  } finally {
-    tenantRegBusy.value = false;
-  }
-};
-
 const logout = async () => {
   stopScanner();
   token.value = '';
@@ -1321,18 +1246,6 @@ const exportStaffAttendees = () => {
 const onStaffEventChange = async () => {
   if (selectedStaffEventId.value) {
     await loadStaffInviteDetails(selectedStaffEventId.value);
-  }
-};
-
-const loadScannerEvents = async () => {
-  try {
-    const res = await api.get('/events?scope=active');
-    scannerEvents.value = res.data.data.filter((event: any) => event.my_can_scan || authStore.isTenantAdmin || authStore.isAdmin);
-    selectedScannerEventId.value = scannerEvents.value[0]?.id || null;
-    if (!scannerEvents.value.length)
-      scannerError.value = 'Tài khoản chưa được phân công quét QR cho sự kiện đang mở.';
-  } catch (error: any) {
-    scannerError.value = explainError(error);
   }
 };
 

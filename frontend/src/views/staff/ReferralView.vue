@@ -24,15 +24,9 @@ import {
   ChevronDown,
   ChevronUp,
   Phone,
-  Mail,
   MapPin,
-  RotateCw,
   Sparkles,
-  Calendar,
-  Building,
-  ShieldCheck,
   X,
-  Send,
   AlertCircle
 } from 'lucide-vue-next';
 

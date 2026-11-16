@@ -9,7 +9,6 @@ import {
 } from '../../utils/notifications';
 import { formatSessionLabel, sessionBadgeClasses } from '../../utils/eventSessions';
 import {
-  QrCode,
   Maximize2,
   Download,
   Printer,
@@ -30,7 +29,6 @@ import {
   SunMedium,
   RotateCw,
   Ticket,
-  Share2,
   Bell,
   MessageCircle,
   Smartphone,

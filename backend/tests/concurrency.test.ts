@@ -25,7 +25,6 @@ async function runTests() {
     const [staffB]: any = await query('SELECT * FROM users WHERE email = "staff_b@eventqr.com"');
     const [staffD]: any = await query('SELECT * FROM users WHERE email = "staff_d@eventqr.com"');
     const [staffE]: any = await query('SELECT * FROM users WHERE email = "staff_e@eventqr.com"');
-    const [admin]: any = await query('SELECT * FROM users WHERE email = "admin@eventqr.com"');
     const [event]: any = await query('SELECT * FROM events LIMIT 1');
 
     if (!staffA || !staffB || !staffD || !staffE || !event) {

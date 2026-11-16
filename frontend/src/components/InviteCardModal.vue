@@ -8,7 +8,6 @@ import {
   Sparkles,
   Upload,
   Check,
-  Image as ImageIcon,
   Link,
   MapPin,
   Calendar,
@@ -1417,14 +1416,6 @@ const generateCard = async () => {
   ctx.fillText('HỆ THỐNG QUẢN LÝ CHECK-IN SỰ KIỆN EVENTGO • VIP GALA PASS', width / 2, 1740);
 
   previewDataUrl.value = canvas.toDataURL('image/png');
-};
-
-const toggleAdvancedEditor = () => {
-  showAdvancedEditor.value = !showAdvancedEditor.value;
-  if (!showAdvancedEditor.value && selectedTheme.value === 'custom-template') {
-    selectedTheme.value = 'ivory-gold';
-    generateCard();
-  }
 };
 
 const downloadCard = () => {
