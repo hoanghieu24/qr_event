@@ -157,6 +157,7 @@ export class EventsService {
     location: string;
     map_url?: string;
     info_url?: string;
+    poster_url?: string;
     poster_base64?: string;
     start_at: string;
     end_at: string;
@@ -188,6 +189,8 @@ export class EventsService {
     let posterUrl = null;
     if (data.poster_base64) {
       posterUrl = await uploadImageToCloudinary(data.poster_base64, 'events');
+    } else if (data.poster_url) {
+      posterUrl = await uploadImageToCloudinary(data.poster_url, 'events');
     }
 
     let packageName: string | null = null;
@@ -411,6 +414,10 @@ export class EventsService {
     if (data.geofence_enabled !== undefined) { fields.push('geofence_enabled = ?'); values.push(data.geofence_enabled ? 1 : 0); }
     if (data.poster_base64) {
       const url = await uploadImageToCloudinary(data.poster_base64, 'events');
+      fields.push('poster_url = ?');
+      values.push(url);
+    } else if (data.poster_url !== undefined) {
+      const url = data.poster_url ? await uploadImageToCloudinary(data.poster_url, 'events') : null;
       fields.push('poster_url = ?');
       values.push(url);
     }

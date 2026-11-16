@@ -3,6 +3,7 @@ import { ref, computed, onMounted, onUnmounted } from 'vue';
 import api from '../../api/client';
 import { getSocket } from '../../api/socket';
 import InviteCardModal from '../../components/InviteCardModal.vue';
+import EventPosterField from '../../components/EventPosterField.vue';
 import SessionAllocationField from '../../components/SessionAllocationField.vue';
 import AdminEventInvitesModal from '../../components/AdminEventInvitesModal.vue';
 import {
@@ -164,6 +165,7 @@ const newEvent = ref({
   name: '',
   description: '',
   location: '',
+  poster_url: '',
   start_at: '2026-10-15T08:30',
   end_at: '2026-10-15T17:30',
   capacity: 500,
@@ -272,6 +274,7 @@ const adminEditEventForm = ref({
   id: 0,
   name: '',
   location: '',
+  poster_url: '',
   start_at: '',
   end_at: '',
   capacity: 500,
@@ -296,6 +299,7 @@ const openAdminEditEventModal = (ev: any) => {
     id: ev.id,
     name: ev.name || '',
     location: ev.location || '',
+    poster_url: ev.poster_url || '',
     start_at: toInputDate(ev.start_at),
     end_at: toInputDate(ev.end_at),
     capacity: cap,
@@ -329,6 +333,7 @@ const saveAdminEditEvent = async () => {
     await api.put(`/events/${adminEditEventForm.value.id}`, {
       name: adminEditEventForm.value.name,
       location: adminEditEventForm.value.location,
+      poster_url: adminEditEventForm.value.poster_url || null,
       start_at: toMysqlDate(adminEditEventForm.value.start_at),
       end_at: toMysqlDate(adminEditEventForm.value.end_at),
       capacity: Number(adminEditEventForm.value.capacity),
@@ -994,6 +999,7 @@ const handleCreateEvent = async () => {
       name: '',
       description: '',
       location: '',
+      poster_url: '',
       start_at: '2026-10-15T08:30',
       end_at: '2026-10-15T17:30',
       capacity: 500,
@@ -4336,6 +4342,11 @@ const formatOtpTime = (dateStr: string) => {
             </div>
           </div>
 
+          <EventPosterField
+            v-model="newEvent.poster_url"
+            :eventName="newEvent.name"
+          />
+
           <div>
             <label class="block font-bold text-slate-700 mb-1">Mô tả sự kiện</label>
             <textarea v-model="newEvent.description" rows="2" class="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl"></textarea>
@@ -4368,6 +4379,11 @@ const formatOtpTime = (dateStr: string) => {
         </div>
 
         <form @submit.prevent="saveAdminEditEvent" class="space-y-4">
+          <EventPosterField
+            v-model="adminEditEventForm.poster_url"
+            :eventName="adminEditEventForm.name"
+          />
+
           <div>
             <label class="block font-bold text-slate-700 text-xs mb-1">Tên sự kiện <span class="text-rose-500">*</span></label>
             <input v-model="adminEditEventForm.name" required class="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-900" />

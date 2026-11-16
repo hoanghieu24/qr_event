@@ -357,7 +357,7 @@ export class TenantsService {
   }
 
   static async createEvent(tenantId: number, userId: number, data: {
-    name: string; description?: string; location: string; poster_base64?: string;
+    name: string; description?: string; location: string; poster_base64?: string; poster_url?: string;
     map_url?: string; info_url?: string; registration_deadline?: string | null;
     start_at: string; end_at: string; capacity?: number;
     session_mode?: string;
@@ -377,7 +377,11 @@ export class TenantsService {
     }[];
   }) {
     let posterUrl: string | null = null;
-    if (data.poster_base64) posterUrl = await uploadImageToCloudinary(data.poster_base64, 'events');
+    if (data.poster_base64) {
+      posterUrl = await uploadImageToCloudinary(data.poster_base64, 'events');
+    } else if (data.poster_url) {
+      posterUrl = await uploadImageToCloudinary(data.poster_url, 'events');
+    }
 
     const created = await withTransaction(async (conn) => {
       const [tenantRows]: any = await conn.query(
@@ -634,6 +638,8 @@ export class TenantsService {
     location?: string;
     map_url?: string;
     info_url?: string;
+    poster_url?: string | null;
+    poster_base64?: string | null;
     start_at?: string;
     end_at?: string;
     registration_deadline?: string | null;
@@ -662,6 +668,15 @@ export class TenantsService {
     if (data.location) { fields.push('location = ?'); values.push(data.location.trim()); }
     if (data.map_url !== undefined) { fields.push('map_url = ?'); values.push(data.map_url ? data.map_url.trim() : null); }
     if (data.info_url !== undefined) { fields.push('info_url = ?'); values.push(data.info_url ? data.info_url.trim() : null); }
+    if (data.poster_base64) {
+      const uploadedPoster = await uploadImageToCloudinary(data.poster_base64, 'events');
+      fields.push('poster_url = ?');
+      values.push(uploadedPoster);
+    } else if (data.poster_url !== undefined) {
+      const nextPoster = data.poster_url ? await uploadImageToCloudinary(data.poster_url, 'events') : null;
+      fields.push('poster_url = ?');
+      values.push(nextPoster);
+    }
     if (data.start_at) { fields.push('start_at = ?'); values.push(data.start_at); }
     if (data.end_at) { fields.push('end_at = ?'); values.push(data.end_at); }
     if (data.registration_deadline !== undefined) { fields.push('registration_deadline = ?'); values.push(data.registration_deadline || null); }

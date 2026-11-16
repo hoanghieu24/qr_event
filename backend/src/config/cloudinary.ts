@@ -12,20 +12,29 @@ export async function uploadImageToCloudinary(
   fileBase64OrPath: string,
   folder: string = 'event_posters'
 ): Promise<string> {
+  const cleanInput = String(fileBase64OrPath || '').trim();
+  if (!cleanInput) {
+    return 'https://images.unsplash.com/photo-1540575467063-178a50c2df87?auto=format&fit=crop&w=1200&q=80';
+  }
+
+  if (/^https?:\/\//i.test(cleanInput)) {
+    return cleanInput;
+  }
+
   try {
     if (!ENV.CLOUDINARY_API_KEY || ENV.CLOUDINARY_API_KEY === '123456789') {
-      // Mock / fallback if cloudinary not yet configured
-      return `https://images.unsplash.com/photo-1540575467063-178a50c2df87?auto=format&fit=crop&w=1200&q=80`;
+      // Store compressed Data URL directly when Cloudinary is not configured
+      return cleanInput;
     }
 
-    const result = await cloudinary.uploader.upload(fileBase64OrPath, {
+    const result = await cloudinary.uploader.upload(cleanInput, {
       folder,
       resource_type: 'auto',
     });
     return result.secure_url;
   } catch (error) {
-    console.error('[Cloudinary Upload Error]', error);
-    throw new Error('Không thể tải ảnh lên Cloudinary');
+    console.error('[Cloudinary Upload Error - falling back to inline Data URL]', error);
+    return cleanInput;
   }
 }
 

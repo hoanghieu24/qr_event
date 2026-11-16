@@ -6,6 +6,7 @@ import api from '../../api/client';
 import { useAuthStore } from '../../stores/auth';
 import { navigateWithFallback, performLogoutAndRedirect } from '../../utils/authSession';
 import InviteCardModal from '../../components/InviteCardModal.vue';
+import EventPosterField from '../../components/EventPosterField.vue';
 import SessionAllocationField from '../../components/SessionAllocationField.vue';
 import TenantSessionLinksCard from '../../components/TenantSessionLinksCard.vue';
 import {
@@ -291,6 +292,7 @@ const eventForm = ref({
   location: '',
   map_url: '',
   info_url: '',
+  poster_url: '',
   start_at: '',
   end_at: '',
   registration_deadline: '',
@@ -324,6 +326,7 @@ const editEventForm = ref({
   location: '',
   map_url: '',
   info_url: '',
+  poster_url: '',
   start_at: '',
   end_at: '',
   registration_deadline: '',
@@ -351,6 +354,7 @@ const openEditEventModal = (ev: any) => {
     location: ev.location || '',
     map_url: ev.map_url || '',
     info_url: ev.info_url || '',
+    poster_url: ev.poster_url || '',
     start_at: toInputDate(ev.start_at),
     end_at: toInputDate(ev.end_at),
     registration_deadline: toInputDate(ev.registration_deadline),
@@ -391,6 +395,7 @@ const saveEditEvent = async () => {
       location: editEventForm.value.location,
       map_url: editEventForm.value.map_url || null,
       info_url: editEventForm.value.info_url || null,
+      poster_url: editEventForm.value.poster_url || null,
       start_at: toMysqlDate(editEventForm.value.start_at),
       end_at: toMysqlDate(editEventForm.value.end_at),
       registration_deadline: toMysqlDate(editEventForm.value.registration_deadline) || null,
@@ -927,6 +932,7 @@ const createEvent = async () => {
       location: eventForm.value.location,
       map_url: eventForm.value.map_url || null,
       info_url: eventForm.value.info_url || null,
+      poster_url: eventForm.value.poster_url || undefined,
       start_at: toMysqlDate(eventForm.value.start_at),
       end_at: toMysqlDate(eventForm.value.end_at),
       registration_deadline: toMysqlDate(eventForm.value.registration_deadline) || null,
@@ -947,6 +953,7 @@ const createEvent = async () => {
       location: '',
       map_url: '',
       info_url: '',
+      poster_url: '',
       start_at: '',
       end_at: '',
       registration_deadline: '',
@@ -3756,9 +3763,9 @@ onBeforeUnmount(stopScanner);
                     <span v-if="Number(selectedEvent.is_owner_event) !== 0">{{ selectedEvent.package_name }} · {{ eventPackagePrice(selectedEvent) }}</span>
                     <span v-else-if="selectedEvent.my_max_invites">Hạn mức mời của bạn: {{ selectedEvent.my_max_invites }} khách</span>
                   </div>
-                  <div v-if="Number(selectedEvent.is_owner_event) !== 0" class="flex items-center gap-2 mt-3">
+                  <div v-if="Number(selectedEvent.is_owner_event) !== 0" class="flex flex-wrap items-center gap-2 mt-3">
                     <button type="button" class="px-2.5 py-1.5 rounded-lg border border-white/30 text-xs font-bold text-white hover:bg-white/10 flex items-center gap-1.5 transition cursor-pointer" @click="openEditEventModal(selectedEvent)">
-                      <Edit3 :size="13" /> Sửa thông tin
+                      <Edit3 :size="13" /> Sửa thông tin & Ảnh nền
                     </button>
                     <button v-if="selectedEvent.status === 'PUBLISHED'" class="close-event-button" @click="closeEvent">
                       Đóng sự kiện
@@ -4661,6 +4668,11 @@ onBeforeUnmount(stopScanner);
               @update:afternoonCapacity="eventForm.afternoon_capacity = $event"
             />
 
+            <EventPosterField
+              v-model="eventForm.poster_url"
+              :eventName="eventForm.name"
+            />
+
             <div>
               <label class="modern-label">Mô tả sự kiện (không bắt buộc)</label>
               <textarea v-model="eventForm.description" class="modern-textarea" rows="2" placeholder="Ghi chú thêm về nội dung, trang phục hoặc lịch trình..."></textarea>
@@ -4838,6 +4850,11 @@ onBeforeUnmount(stopScanner);
       </div>
 
       <form @submit.prevent="saveEditEvent" class="space-y-4">
+        <EventPosterField
+          v-model="editEventForm.poster_url"
+          :eventName="editEventForm.name"
+        />
+
         <div>
           <label class="block text-xs font-bold text-slate-700 mb-1">Tên sự kiện <span class="text-rose-500">*</span></label>
           <input v-model="editEventForm.name" required class="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-900" />

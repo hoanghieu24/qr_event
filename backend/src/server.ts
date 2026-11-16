@@ -71,18 +71,25 @@ async function runStartupMaintenance() {
 
     // Check legacy columns in 1 query instead of throwing 4 ALTER TABLE errors per boot
     const [colRows]: any = await conn.query(`
-      SELECT TABLE_NAME, COLUMN_NAME
+      SELECT TABLE_NAME, COLUMN_NAME, DATA_TYPE
       FROM INFORMATION_SCHEMA.COLUMNS
       WHERE TABLE_SCHEMA = DATABASE()
         AND (
           (TABLE_NAME = 'invite_links' AND COLUMN_NAME IN ('legacy_token', 'session_type'))
-          OR (TABLE_NAME = 'events' AND COLUMN_NAME IN ('registration_deadline', 'map_url', 'info_url', 'session_mode', 'morning_capacity', 'afternoon_capacity'))
+          OR (TABLE_NAME = 'events' AND COLUMN_NAME IN ('registration_deadline', 'map_url', 'info_url', 'poster_url', 'session_mode', 'morning_capacity', 'afternoon_capacity'))
           OR (TABLE_NAME = 'registrations' AND COLUMN_NAME = 'session_type')
         )
     `);
     const existingCols = new Set<string>(
       (Array.isArray(colRows) ? colRows : []).map((r: any) => `${r.TABLE_NAME}.${r.COLUMN_NAME}`)
     );
+
+    const posterCol = (Array.isArray(colRows) ? colRows : []).find(
+      (r: any) => r.TABLE_NAME === 'events' && r.COLUMN_NAME === 'poster_url'
+    );
+    if (posterCol && String(posterCol.DATA_TYPE || '').toLowerCase() === 'varchar') {
+      await conn.query('ALTER TABLE events MODIFY COLUMN poster_url MEDIUMTEXT NULL');
+    }
 
     await ensureColumnExists(conn, existingCols, 'invite_links', 'legacy_token', `ALTER TABLE invite_links ADD COLUMN legacy_token VARCHAR(255) NULL AFTER token`);
     await ensureColumnExists(conn, existingCols, 'events', 'registration_deadline', `ALTER TABLE events ADD COLUMN registration_deadline DATETIME NULL AFTER end_at`);
