@@ -8,10 +8,12 @@
     -webkit-text-size-adjust: 100%;
     -webkit-tap-highlight-color: transparent;
     scroll-behavior: smooth;
+    overflow-x: clip;
   }
   body {
     @apply bg-slate-50 text-slate-800 antialiased font-sans;
     font-feature-settings: 'cv11', 'ss01';
+    overflow-x: clip;
   }
   ::selection {
     @apply bg-primary-200 text-primary-950;
@@ -29,9 +31,9 @@
       transition-duration: 0.01ms !important;
     }
   }
-  /* Ngăn iOS tự zoom khi chạm vào ô nhập (font < 16px) */
+  /* Ngăn iOS tự zoom khi chạm vào ô nhập (font < 16px), giữ nguyên kích thước cho ô readonly copy link */
   @media (max-width: 639px) {
-    input,
+    input:not([readonly]),
     select,
     textarea {
       font-size: 16px !important;
@@ -63,10 +65,10 @@
 @layer components {
   /* Layout */
   .page {
-    @apply mx-auto w-full max-w-6xl px-4 pb-8 pt-5 sm:px-6 sm:pt-8 lg:px-8;
+    @apply mx-auto w-full max-w-6xl px-3.5 pb-10 pt-4 sm:px-6 sm:pt-8 lg:px-8;
   }
   .page-narrow {
-    @apply mx-auto w-full max-w-2xl px-4 pb-8 pt-5 sm:px-6 sm:pt-10;
+    @apply mx-auto w-full max-w-2xl px-3.5 pb-10 pt-4 sm:px-6 sm:pt-10;
   }
   .page-title {
     @apply text-xl font-extrabold tracking-tight text-slate-900 sm:text-2xl;

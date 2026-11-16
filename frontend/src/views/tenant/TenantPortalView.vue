@@ -3226,7 +3226,16 @@ onBeforeUnmount(stopScanner);
           <span class="user-initial">{{ (user?.name || 'K').slice(0, 1).toUpperCase() }}</span>
           <span><b>{{ user?.name }}</b><small>Quản lý đơn vị</small></span>
         </div>
-        <button class="icon-button mobile-logout" @click="logout"><LogOut :size="18" /></button>
+        <button
+          v-if="user?.type === 'TENANT_ADMIN' && usage?.can_create_event"
+          type="button"
+          class="md:hidden inline-flex items-center gap-1 px-2.5 py-1.5 rounded-xl bg-primary-700 text-white text-xs font-bold shadow-2xs cursor-pointer shrink-0"
+          @click="openEventModal()"
+        >
+          <Plus :size="14" />
+          <span>Tạo SK</span>
+        </button>
+        <button class="icon-button mobile-logout" title="Đăng xuất" @click="logout"><LogOut :size="18" /></button>
       </header>
 
       <div class="content-area pb-24 md:pb-8">
@@ -4191,36 +4200,36 @@ onBeforeUnmount(stopScanner);
     </main>
 
     <!-- THANH ĐIỀU HƯỚNG DƯỚI CÙNG TRÊN MOBILE CHO BAN TỔ CHỨC (TENANT ADMIN) -->
-    <nav class="md:hidden fixed bottom-0 inset-x-0 z-40 bg-white/95 backdrop-blur-md border-t border-slate-200/90 flex items-center justify-around py-1.5 px-2 shadow-lg pb-safe">
+    <nav class="md:hidden fixed bottom-0 inset-x-0 z-40 bg-white/95 backdrop-blur-md border-t border-slate-200/90 flex items-center justify-around py-1.5 px-1 shadow-lg pb-safe">
       <button
         type="button"
         @click="activePanel = 'overview'"
-        class="flex flex-col items-center justify-center flex-1 py-1 px-1 rounded-xl transition cursor-pointer"
+        class="flex flex-col items-center justify-center flex-1 min-h-[50px] py-1 px-0.5 rounded-xl transition cursor-pointer"
         :class="activePanel === 'overview' ? 'text-primary-700 bg-primary-50/80 font-bold' : 'text-slate-500 hover:text-slate-800 font-medium'"
       >
         <CalendarDays :size="18" />
-        <span class="text-[10px] mt-0.5">Tổng quan</span>
+        <span class="text-[10px] mt-0.5 leading-tight">Tổng quan</span>
       </button>
 
       <button
         type="button"
         @click="activePanel = 'invites'"
-        class="flex flex-col items-center justify-center flex-1 py-1 px-1 rounded-xl transition cursor-pointer"
+        class="flex flex-col items-center justify-center flex-1 min-h-[50px] py-1 px-0.5 rounded-xl transition cursor-pointer"
         :class="activePanel === 'invites' ? 'text-amber-700 bg-amber-50/80 font-bold' : 'text-slate-500 hover:text-slate-800 font-medium'"
       >
         <Sparkles :size="18" />
-        <span class="text-[10px] mt-0.5">Thư mời</span>
+        <span class="text-[10px] mt-0.5 leading-tight">Thư mời</span>
       </button>
 
       <button
         type="button"
         @click="activePanel = 'attendees'"
-        class="flex flex-col items-center justify-center flex-1 py-1 px-1 rounded-xl transition cursor-pointer relative"
+        class="flex flex-col items-center justify-center flex-1 min-h-[50px] py-1 px-0.5 rounded-xl transition cursor-pointer relative"
         :class="activePanel === 'attendees' ? 'text-sky-700 bg-sky-50/80 font-bold' : 'text-slate-500 hover:text-slate-800 font-medium'"
       >
         <Users :size="18" />
-        <span class="text-[10px] mt-0.5">Khách mời</span>
-        <span v-if="attendees.length" class="absolute top-0 right-1.5 px-1 py-0.2 bg-primary-600 text-white rounded-full text-[9px] font-mono leading-none">
+        <span class="text-[10px] mt-0.5 leading-tight">Khách mời</span>
+        <span v-if="attendees.length" class="absolute top-0.5 right-1 px-1 py-0.2 bg-primary-600 text-white rounded-full text-[9px] font-mono leading-none">
           {{ attendees.length }}
         </span>
       </button>
@@ -4228,21 +4237,34 @@ onBeforeUnmount(stopScanner);
       <button
         type="button"
         @click="stopScanner(); activePanel = 'team'"
-        class="flex flex-col items-center justify-center flex-1 py-1 px-1 rounded-xl transition cursor-pointer"
+        class="flex flex-col items-center justify-center flex-1 min-h-[50px] py-1 px-0.5 rounded-xl transition cursor-pointer"
         :class="activePanel === 'team' ? 'text-purple-700 bg-purple-50/80 font-bold' : 'text-slate-500 hover:text-slate-800 font-medium'"
       >
         <ShieldCheck :size="18" />
-        <span class="text-[10px] mt-0.5">Đội ngũ</span>
+        <span class="text-[10px] mt-0.5 leading-tight">Đội ngũ</span>
       </button>
 
       <button
         type="button"
         @click="selectedScannerEventId = selectedEvent?.id || scannerEvents[0]?.id || null; activePanel = 'scanner'"
-        class="flex flex-col items-center justify-center flex-1 py-1 px-1 rounded-xl transition cursor-pointer"
+        class="flex flex-col items-center justify-center flex-1 min-h-[50px] py-1 px-0.5 rounded-xl transition cursor-pointer"
         :class="activePanel === 'scanner' ? 'text-emerald-700 bg-emerald-50/80 font-bold' : 'text-slate-500 hover:text-slate-800 font-medium'"
       >
         <Camera :size="18" />
-        <span class="text-[10px] mt-0.5">Soát vé</span>
+        <span class="text-[10px] mt-0.5 leading-tight">Soát vé</span>
+      </button>
+
+      <button
+        type="button"
+        @click="stopScanner(); loadDisputes(); activePanel = 'disputes'"
+        class="flex flex-col items-center justify-center flex-1 min-h-[50px] py-1 px-0.5 rounded-xl transition cursor-pointer relative"
+        :class="activePanel === 'disputes' ? 'text-rose-700 bg-rose-50/80 font-bold' : 'text-slate-500 hover:text-slate-800 font-medium'"
+      >
+        <Scale :size="18" />
+        <span class="text-[10px] mt-0.5 leading-tight">Tranh chấp</span>
+        <span v-if="disputesList.filter(d => d.decision === 'PENDING').length" class="absolute top-0.5 right-1 px-1 py-0.2 bg-amber-500 text-white rounded-full text-[9px] font-mono leading-none">
+          {{ disputesList.filter(d => d.decision === 'PENDING').length }}
+        </span>
       </button>
     </nav>
 

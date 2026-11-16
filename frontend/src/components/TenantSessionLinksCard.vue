@@ -100,9 +100,9 @@ const isSplit = computed(() => props.selectedEvent?.session_mode === 'SPLIT_SESS
           </span>
         </div>
 
-        <div class="grid sm:grid-cols-[126px_1fr] gap-3 items-center">
+        <div class="grid sm:grid-cols-[132px_1fr] gap-3 items-center">
           <!-- QR Code Mini Box -->
-          <div class="flex flex-col items-center gap-1.5 p-2 bg-white rounded-2xl border border-slate-200/80 shadow-2xs">
+          <div class="flex flex-col items-center gap-2 p-2.5 bg-white rounded-2xl border border-slate-200/80 shadow-2xs">
             <div
               @click="emit('zoom', link)"
               class="relative p-1 bg-white rounded-xl cursor-pointer hover:scale-102 transition group"
@@ -112,9 +112,9 @@ const isSplit = computed(() => props.selectedEvent?.session_mode === 'SPLIT_SESS
                 v-if="qrByToken[link.token]"
                 :src="qrByToken[link.token]"
                 :alt="`QR ${formatSessionLabel(link.session_type)}`"
-                class="w-24 h-24 object-contain rounded-lg"
+                class="w-28 h-28 sm:w-24 sm:h-24 object-contain rounded-lg"
               />
-              <div v-else class="w-24 h-24 flex flex-col items-center justify-center text-slate-400 text-xs text-center p-2">
+              <div v-else class="w-28 h-28 sm:w-24 sm:h-24 flex flex-col items-center justify-center text-slate-400 text-xs text-center p-2">
                 <span v-if="loading">Đang tạo...</span>
                 <button v-else type="button" @click.stop="emit('refresh')" class="text-primary-600 font-bold underline">Tạo QR</button>
               </div>
@@ -123,40 +123,40 @@ const isSplit = computed(() => props.selectedEvent?.session_mode === 'SPLIT_SESS
               </div>
             </div>
 
-            <div class="flex items-center gap-1 w-full">
+            <div class="flex items-center gap-1.5 w-full">
               <button
                 type="button"
                 @click="emit('zoom', link)"
                 :disabled="!qrByToken[link.token]"
-                class="flex-1 py-1 px-1.5 bg-slate-100 hover:bg-slate-200 rounded-lg text-slate-700 text-[10px] font-bold flex items-center justify-center gap-0.5 transition cursor-pointer"
+                class="flex-1 min-h-8 py-1.5 px-2 bg-slate-100 hover:bg-slate-200 rounded-lg text-slate-700 text-[11px] font-bold flex items-center justify-center gap-1 transition cursor-pointer"
               >
-                <Maximize2 :size="10" /> Phóng to
+                <Maximize2 :size="11" /> Phóng to
               </button>
               <a
                 v-if="!compact && qrByToken[link.token]"
                 :href="qrByToken[link.token]"
                 :download="`QR-${selectedEvent?.name || 'sukien'}-${link.session_type || 'FULL'}.png`"
-                class="flex-1 py-1 px-1.5 bg-primary-50 hover:bg-primary-100 text-primary-700 border border-primary-200 rounded-lg text-[10px] font-bold flex items-center justify-center gap-0.5 transition cursor-pointer"
+                class="flex-1 min-h-8 py-1.5 px-2 bg-primary-50 hover:bg-primary-100 text-primary-700 border border-primary-200 rounded-lg text-[11px] font-bold flex items-center justify-center gap-1 transition cursor-pointer"
               >
-                <Download :size="10" /> Tải
+                <Download :size="11" /> Tải
               </a>
             </div>
           </div>
 
           <!-- Link Input & Actions -->
-          <div class="space-y-2 min-w-0">
-            <div class="flex items-center gap-1.5 p-1 bg-white border border-slate-200 rounded-xl shadow-2xs">
+          <div class="space-y-2.5 min-w-0">
+            <div class="flex items-center gap-1.5 p-1.5 bg-white border border-slate-200 rounded-xl shadow-2xs">
               <span class="pl-2 text-slate-400 shrink-0"><Link2 :size="14" /></span>
               <input
                 readonly
                 :value="link.invite_url || (loading ? 'Đang tạo link mời...' : 'Đang lấy link...')"
-                class="flex-1 text-xs font-mono font-bold text-primary-700 bg-transparent border-0 outline-none select-all truncate py-1.5"
+                class="flex-1 min-w-0 text-xs font-mono font-bold text-primary-700 bg-transparent border-0 outline-none select-all truncate py-1.5"
               />
               <button
                 type="button"
                 @click="emit('copy', link)"
                 :disabled="!link.invite_url"
-                class="px-3 py-1.5 rounded-lg bg-primary-700 hover:bg-primary-800 text-white text-xs font-bold flex items-center gap-1 shrink-0 transition cursor-pointer"
+                class="min-h-9 px-3 py-1.5 rounded-lg bg-primary-700 hover:bg-primary-800 text-white text-xs font-bold flex items-center gap-1 shrink-0 transition cursor-pointer"
               >
                 <Check v-if="copiedKey === (link.session_type || 'FULL_DAY')" :size="13" />
                 <Copy v-else :size="13" />
@@ -169,17 +169,17 @@ const isSplit = computed(() => props.selectedEvent?.session_mode === 'SPLIT_SESS
                 type="button"
                 @click="emit('share', link)"
                 :disabled="!link.invite_url"
-                class="py-2 px-2.5 rounded-xl bg-white border border-slate-200 hover:border-primary-300 text-slate-700 text-xs font-bold flex items-center justify-center gap-1 shadow-2xs transition cursor-pointer"
+                class="min-h-10 py-2 px-3 rounded-xl bg-white border border-slate-200 hover:border-primary-300 text-slate-700 text-xs font-bold flex items-center justify-center gap-1.5 shadow-2xs transition cursor-pointer"
               >
-                <Share2 :size="13" class="text-primary-600" />
+                <Share2 :size="14" class="text-primary-600" />
                 <span>Chia sẻ</span>
               </button>
               <button
                 type="button"
                 @click="emit('vip-card', link)"
-                class="py-2 px-2.5 rounded-xl bg-gradient-to-r from-amber-500 to-orange-500 hover:from-amber-600 hover:to-orange-600 text-white text-xs font-bold flex items-center justify-center gap-1 shadow-xs transition cursor-pointer"
+                class="min-h-10 py-2 px-3 rounded-xl bg-gradient-to-r from-amber-500 to-orange-500 hover:from-amber-600 hover:to-orange-600 text-white text-xs font-bold flex items-center justify-center gap-1.5 shadow-xs transition cursor-pointer"
               >
-                <Sparkles :size="13" />
+                <Sparkles :size="14" />
                 <span>Thiệp VIP</span>
               </button>
             </div>

@@ -526,7 +526,71 @@ onMounted(() => { load(); loadBankSettings(); loadTenantEvents(); });
       <div v-if="!tenantEvents.length" class="p-8 text-center text-sm text-slate-500">
         Chưa có khách thuê nào mở sự kiện.
       </div>
-      <div v-else class="overflow-x-auto">
+      <div v-else>
+        <!-- Mobile Cards cho Sự kiện khách thuê -->
+        <div class="sm:hidden divide-y divide-slate-100">
+          <div v-for="ev in tenantEvents" :key="'mob_' + ev.id" class="p-4 space-y-3">
+            <div class="flex items-start justify-between gap-2">
+              <div class="min-w-0">
+                <b class="text-sm font-bold text-slate-900 block leading-snug">{{ ev.name }}</b>
+                <span class="text-xs text-slate-500 block mt-0.5">{{ ev.location }}</span>
+                <span class="text-xs font-bold text-indigo-800 block mt-1">{{ ev.tenant_name }} ({{ ev.contact_email }})</span>
+              </div>
+              <span
+                class="px-2.5 py-0.5 rounded-full text-[10px] font-bold shrink-0"
+                :class="ev.status === 'PUBLISHED' ? 'bg-emerald-50 text-emerald-700 border border-emerald-200' : 'bg-rose-50 text-rose-700 border border-rose-200'"
+              >
+                {{ ev.status === 'PUBLISHED' ? 'Đang mở' : 'Đã đóng' }}
+              </span>
+            </div>
+
+            <div class="flex flex-wrap items-center justify-between gap-2 bg-slate-50 rounded-xl p-2.5 text-xs">
+              <div>
+                <span class="font-semibold text-slate-800">{{ ev.package_name || 'Gói mặc định' }}</span>
+                <span v-if="ev.is_trial" class="text-emerald-700 ml-1 font-bold">(Dùng thử 0 ₫)</span>
+                <span v-else class="text-slate-500 ml-1">({{ Number(ev.package_price_vnd).toLocaleString('vi-VN') }} ₫)</span>
+              </div>
+              <span class="font-mono font-bold text-primary-700">Check-in: {{ ev.total_checked_in }} / {{ ev.capacity }}</span>
+            </div>
+
+            <div class="flex items-center justify-between gap-2 pt-1">
+              <span
+                v-if="ev.payment_status === 'PENDING_PAYMENT'"
+                class="px-2 py-1 rounded-lg text-[11px] font-bold bg-amber-100 text-amber-800 border border-amber-200"
+              >
+                ⏳ Chờ thanh toán
+              </span>
+              <span
+                v-else
+                class="px-2 py-1 rounded-lg text-[11px] font-bold bg-emerald-100 text-emerald-800 border border-emerald-200"
+              >
+                ✅ Đã thanh toán
+              </span>
+
+              <div class="flex items-center gap-1.5">
+                <button
+                  v-if="ev.payment_status === 'PENDING_PAYMENT'"
+                  type="button"
+                  class="btn btn-sm bg-emerald-600 hover:bg-emerald-700 text-white font-bold"
+                  @click="confirmTenantEventPayment(ev)"
+                >
+                  Duyệt TT
+                </button>
+                <button
+                  type="button"
+                  class="btn btn-sm font-bold"
+                  :class="ev.status === 'PUBLISHED' ? 'bg-rose-100 text-rose-800 hover:bg-rose-200 border border-rose-200' : 'bg-emerald-100 text-emerald-800 hover:bg-emerald-200 border border-emerald-200'"
+                  @click="toggleTenantEvent(ev)"
+                >
+                  {{ ev.status === 'PUBLISHED' ? 'Đóng sự kiện' : 'Mở lại' }}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Desktop Table -->
+        <div class="hidden sm:block overflow-x-auto">
         <table class="w-full text-left text-xs">
           <thead class="bg-slate-50 text-[10px] uppercase font-bold text-slate-500 border-b border-slate-100">
             <tr>
@@ -602,6 +666,7 @@ onMounted(() => { load(); loadBankSettings(); loadTenantEvents(); });
             </tr>
           </tbody>
         </table>
+        </div>
       </div>
     </section>
 

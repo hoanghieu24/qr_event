@@ -232,46 +232,49 @@ const onOtpInput = (e: Event) => {
     <!-- Right Interaction Panel -->
     <section class="flex min-w-0 flex-col justify-center bg-white lg:bg-transparent">
       <!-- Mobile brand header -->
-      <div class="pt-safe relative overflow-hidden bg-primary-950 px-5 pb-8 pt-7 text-white lg:hidden">
+      <div class="pt-safe relative overflow-hidden bg-primary-950 px-5 pb-10 pt-5 text-white lg:hidden">
         <div class="pointer-events-none absolute -right-16 -top-16 h-56 w-56 rounded-full bg-primary-600/50 blur-3xl" />
-        <div class="relative flex items-center gap-2.5">
-          <img src="/logo-white.png" alt="EventGo" class="h-9 w-auto object-contain" />
+        <div class="relative flex items-center justify-between gap-2.5">
+          <img src="/logo-white.png" alt="EventGo" class="h-8 w-auto object-contain" />
+          <span class="rounded-full bg-white/10 px-2.5 py-1 text-[11px] font-semibold text-primary-100 ring-1 ring-white/15">
+            Vé QR & Sự kiện
+          </span>
         </div>
-        <h1 class="relative mt-3 text-2xl font-extrabold tracking-tight">Chào mừng bạn 👋</h1>
-        <p class="relative mt-1 text-xs text-primary-100/80">Tra cứu vé sự kiện hoặc tạo sự kiện riêng</p>
+        <h1 class="relative mt-2.5 text-xl font-extrabold tracking-tight">Chào mừng bạn 👋</h1>
+        <p class="relative mt-0.5 text-xs text-primary-100/85">Tra cứu vé sự kiện hoặc đăng ký mở sự kiện riêng</p>
       </div>
 
-      <div class="flex min-w-0 flex-1 items-start justify-center px-4 py-8 lg:items-center lg:px-10">
-        <div class="relative z-10 w-full min-w-0 max-w-[440px] rounded-3xl bg-white p-6 shadow-lift ring-1 ring-slate-200/70 sm:p-8 lg:p-8">
+      <div class="flex min-w-0 flex-1 items-start justify-center px-3.5 pb-8 pt-0 -mt-5 lg:mt-0 lg:items-center lg:px-10 lg:py-8">
+        <div class="relative z-10 w-full min-w-0 max-w-[440px] rounded-3xl bg-white p-5 shadow-lift ring-1 ring-slate-200/70 sm:p-8 lg:p-8">
           
           <!-- 2 CHỨC NĂNG DÀNH CHO KHÁCH -->
-          <div class="grid grid-cols-2 gap-2 p-1.5 bg-slate-100 rounded-2xl mb-6">
+          <div class="grid grid-cols-2 gap-1.5 p-1.5 bg-slate-100 rounded-2xl mb-5">
             <button
               type="button"
               @click="mainTab = 'check_ticket'"
               :class="[
-                'flex flex-col items-center justify-center gap-1.5 py-3 px-2 rounded-xl text-xs font-bold transition cursor-pointer select-none',
+                'flex flex-col items-center justify-center gap-1 py-2.5 px-2 rounded-xl text-xs sm:text-[13px] font-bold transition cursor-pointer select-none',
                 mainTab === 'check_ticket'
                   ? 'bg-white text-primary-700 shadow-sm ring-1 ring-slate-200/80'
                   : 'text-slate-600 hover:text-slate-900'
               ]"
             >
               <Ticket class="h-5 w-5" />
-              <span>1. Kiểm tra vé của tôi</span>
+              <span>1. Kiểm tra vé</span>
             </button>
 
             <button
               type="button"
               @click="mainTab = 'host_event'"
               :class="[
-                'flex flex-col items-center justify-center gap-1.5 py-3 px-2 rounded-xl text-xs font-bold transition cursor-pointer select-none',
+                'flex flex-col items-center justify-center gap-1 py-2.5 px-2 rounded-xl text-xs sm:text-[13px] font-bold transition cursor-pointer select-none',
                 mainTab === 'host_event'
                   ? 'bg-white text-primary-700 shadow-sm ring-1 ring-slate-200/80'
                   : 'text-slate-600 hover:text-slate-900'
               ]"
             >
               <Building2 class="h-5 w-5" />
-              <span>2. Tôi muốn mở sự kiện</span>
+              <span>2. Mở sự kiện</span>
             </button>
           </div>
 

@@ -2251,12 +2251,12 @@ const formatOtpTime = (dateStr: string) => {
         </div>
 
         <!-- 2 Sub-tabs buttons -->
-        <div class="inline-flex rounded-2xl bg-slate-100 p-1.5 border border-slate-200 shadow-inner shrink-0">
+        <div class="grid grid-cols-1 sm:inline-flex w-full sm:w-auto gap-1 rounded-2xl bg-slate-100 p-1.5 border border-slate-200 shadow-inner shrink-0">
           <button
             type="button"
             @click="staffSubTab = 'master'"
             :class="staffSubTab === 'master' ? 'bg-white text-primary-700 shadow-xs font-black' : 'text-slate-600 hover:text-slate-900 font-bold'"
-            class="flex items-center gap-2 px-4 py-2 rounded-xl text-xs transition cursor-pointer"
+            class="flex items-center justify-center gap-2 px-4 py-2.5 sm:py-2 rounded-xl text-xs transition cursor-pointer"
           >
             <Crown class="w-4 h-4 text-amber-500" />
             <span>1. Nhân sự chủ ({{ staffList.length }})</span>
@@ -2265,7 +2265,7 @@ const formatOtpTime = (dateStr: string) => {
             type="button"
             @click="staffSubTab = 'tenant'"
             :class="staffSubTab === 'tenant' ? 'bg-white text-primary-700 shadow-xs font-black' : 'text-slate-600 hover:text-slate-900 font-bold'"
-            class="flex items-center gap-2 px-4 py-2 rounded-xl text-xs transition cursor-pointer"
+            class="flex items-center justify-center gap-2 px-4 py-2.5 sm:py-2 rounded-xl text-xs transition cursor-pointer"
           >
             <Building2 class="w-4 h-4 text-blue-500" />
             <span>2. Nhân sự khách thuê ({{ availableTenants.length }} công ty)</span>
@@ -2578,10 +2578,10 @@ const formatOtpTime = (dateStr: string) => {
                   </div>
                 </div>
 
-                <div class="flex items-center gap-2 shrink-0">
+                <div class="flex flex-wrap items-center gap-2 shrink-0 w-full sm:w-auto">
                   <button
                     @click="loadTenantStaffUsers(currentSelectedTenant.id)"
-                    class="btn bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold text-xs py-2 px-3 rounded-xl transition cursor-pointer flex items-center gap-1.5"
+                    class="btn bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold text-xs py-2 px-3 rounded-xl transition cursor-pointer flex items-center justify-center gap-1.5 flex-1 sm:flex-initial"
                     title="Tải lại danh sách"
                   >
                     <RotateCw :class="loadingTenantStaff ? 'animate-spin' : ''" class="w-3.5 h-3.5" />
@@ -2589,7 +2589,7 @@ const formatOtpTime = (dateStr: string) => {
                   </button>
                   <button
                     @click="openAddTenantStaffModal"
-                    class="btn btn-primary text-xs font-bold py-2 px-3.5 rounded-xl shadow-xs flex items-center gap-1.5"
+                    class="btn btn-primary text-xs font-bold py-2 px-3.5 rounded-xl shadow-xs flex items-center justify-center gap-1.5 flex-1 sm:flex-initial"
                   >
                     <UserPlus class="w-3.5 h-3.5" />
                     <span>+ Thêm Nhân Sự Vào Đơn Vị</span>
