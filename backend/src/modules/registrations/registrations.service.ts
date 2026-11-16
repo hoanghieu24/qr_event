@@ -206,11 +206,25 @@ export class RegistrationsService {
     email: string;
     address?: string;
   }) {
+    if (!customerId) {
+      throw new Error('Vui lòng nhập mã OTP gửi về email để xác thực chuẩn địa chỉ email trước khi hoàn tất đăng ký.');
+    }
+
     // 1. Verify invite link token (strict: ném lỗi nếu link đã hết hạn hoặc sự kiện đã đóng)
     const invite = await InvitesService.verifyInviteToken(data.token, { strict: true });
 
     const cleanEmail = data.email.trim().toLowerCase();
     const cleanPhone = data.phone.trim();
+
+    // Verify authenticated user matches the verified email
+    const authUserRows = await query<any[]>('SELECT id, email FROM users WHERE id = ? LIMIT 1', [customerId]);
+    if (!authUserRows.length) {
+      throw new Error('Phiên xác thực email không hợp lệ. Vui lòng xác thực lại mã OTP.');
+    }
+    const verifiedUserEmail = String(authUserRows[0].email || '').trim().toLowerCase();
+    if (verifiedUserEmail && verifiedUserEmail !== cleanEmail) {
+      throw new Error(`Email đăng ký (${cleanEmail}) không khớp với email đã xác thực OTP (${verifiedUserEmail}).`);
+    }
 
     // 2. Check duplicate registration by email or phone for this event BEFORE touching users table
     const existingByEmail = await query<any[]>(
@@ -235,22 +249,12 @@ export class RegistrationsService {
       throw new Error(`Số điện thoại này đã được đăng ký vé cho sự kiện này${prevSession}.`);
     }
 
-    // 3. Identify or create customer account by email
-    let actualCustomerId = customerId;
-    const existingUsers = await query<any[]>('SELECT id FROM users WHERE email = ? LIMIT 1', [cleanEmail]);
-    if (existingUsers.length > 0) {
-      actualCustomerId = existingUsers[0].id;
-    } else {
-      const existingPhoneUser = await query<any[]>('SELECT id FROM users WHERE phone = ? LIMIT 1', [cleanPhone]);
-      if (existingPhoneUser.length > 0) {
-        throw new Error('Số điện thoại này đã được liên kết với một tài khoản khác trên hệ thống. Vui lòng sử dụng đúng email đã đăng ký.');
-      }
-      const newCust: any = await query(
-        `INSERT INTO users (type, name, email, phone, status) VALUES ('CUSTOMER', ?, ?, ?, 'ACTIVE')`,
-        [data.full_name, cleanEmail, cleanPhone]
-      );
-      actualCustomerId = newCust.insertId;
-    }
+    // 3. Identify or update customer account by verified customerId
+    const actualCustomerId = customerId;
+    await query(
+      'UPDATE users SET name = ?, phone = COALESCE(?, phone) WHERE id = ?',
+      [data.full_name.trim(), cleanPhone || null, actualCustomerId]
+    );
 
     // 4. Also check if resolved customer account already registered for this event
     const existing = await query<any[]>(

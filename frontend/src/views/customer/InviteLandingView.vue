@@ -42,7 +42,6 @@ const actionChosen = ref<'none' | 'confirm' | 'decline'>('none');
 const isSubmitting = ref(false);
 const registrationDone = ref(false);
 const registrationResult = ref<any>(null);
-const showQuickLoginInAuto = ref(false);
 const isAutoApproveEvent = computed(() => event.value?.approval_mode === 'AUTO');
 
 const authMode = ref<'otp' | 'password'>('otp');
@@ -229,7 +228,10 @@ const loadInvite = async () => {
       window.history.replaceState({}, '', `/invite/${inviteData.value.token}`);
     }
     if (auth.user) {
-      form.value.full_name = auth.user.name || form.value.full_name;
+      const emailPrefix = (auth.user.email || '').split('@')[0]?.toLowerCase();
+      if (auth.user.name && auth.user.name.trim().toLowerCase() !== emailPrefix) {
+        form.value.full_name = auth.user.name;
+      }
       form.value.email = auth.user.email || form.value.email;
       form.value.phone = auth.user.phone || form.value.phone;
     }
@@ -306,9 +308,12 @@ const handleVerifyOtp = async () => {
   formError.value = '';
   otpBusy.value = true;
   try {
-    const user = await auth.verifyOtp(otpEmail.value.trim(), otpCode.value.trim(), form.value.full_name, form.value.phone);
-    form.value.full_name = user.name || form.value.full_name;
-    form.value.email = user.email || form.value.email;
+    const user = await auth.verifyOtp(otpEmail.value.trim(), otpCode.value.trim(), form.value.full_name || undefined, form.value.phone || undefined);
+    const emailPrefix = (user.email || otpEmail.value.trim()).split('@')[0]?.toLowerCase();
+    if (user.name && user.name.trim().toLowerCase() !== emailPrefix) {
+      form.value.full_name = user.name;
+    }
+    form.value.email = user.email || otpEmail.value.trim();
     form.value.phone = user.phone || form.value.phone;
   } catch (err: any) {
     formError.value = err.response?.data?.message || err.message;
@@ -319,10 +324,19 @@ const handleVerifyOtp = async () => {
 
 const handleSubmitRegistration = async () => {
   formError.value = '';
+  if (!auth.isAuthenticated) {
+    formError.value = 'Vui lòng nhập mã OTP 6 chữ số để xác thực email trước khi hoàn tất đăng ký.';
+    return;
+  }
   isSubmitting.value = true;
   try {
     const activeToken = inviteData.value?.token || token;
-    const res = await api.post('/registrations', { token: activeToken, ...form.value });
+    const verifiedEmail = auth.user?.email || form.value.email;
+    const res = await api.post('/registrations', {
+      token: activeToken,
+      ...form.value,
+      email: verifiedEmail,
+    });
     const resultData = res.data?.data || {};
     if (resultData.token && resultData.user) {
       auth.setSession(resultData.token, resultData.user);
@@ -680,28 +694,21 @@ const handleSubmitRegistration = async () => {
 
               <!-- Auto-approve fast-track notice -->
               <div
-                v-if="isAutoApproveEvent && !auth.isAuthenticated"
+                v-if="isAutoApproveEvent"
                 class="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-emerald-200 bg-emerald-50/80 px-3.5 py-2.5 text-xs text-emerald-900"
               >
                 <span class="font-semibold">
-                  ⚡ <b>Cấp vé QR tự động:</b> Chỉ cần điền thông tin bên dưới, hệ thống sẽ cấp ngay mã QR và gửi về Email của bạn!
+                  ⚡ <b>Cấp vé QR tự động:</b> Xác thực mã OTP email xong và điền thông tin, hệ thống sẽ cấp ngay mã QR và gửi về Email của bạn!
                 </span>
-                <button
-                  type="button"
-                  @click="showQuickLoginInAuto = !showQuickLoginInAuto"
-                  class="font-bold text-primary-700 underline cursor-pointer shrink-0"
-                >
-                  {{ showQuickLoginInAuto ? 'Ẩn đăng nhập' : 'Đã có tài khoản?' }}
-                </button>
               </div>
 
-              <!-- Step 1: Authentication (OTP or Password) -->
-              <div v-if="!auth.isAuthenticated && (!isAutoApproveEvent || showQuickLoginInAuto)" class="space-y-4">
+              <!-- Step 1: Authentication (OTP or Password) - BẮT BUỘC XÁC THỰC EMAIL -->
+              <div v-if="!auth.isAuthenticated" class="space-y-4">
                 <!-- MODE 1: OTP Flow -->
                 <template v-if="authMode === 'otp'">
                   <div>
-                    <h3 class="font-bold text-slate-900">Xác thực email của bạn</h3>
-                    <p class="text-sm text-slate-500">Nhập email để nhận mã OTP 6 chữ số xác thực danh tính trước khi nhận vé QR.</p>
+                    <h3 class="font-bold text-slate-900">Bước 1: Xác thực email bằng mã OTP (Bắt buộc)</h3>
+                    <p class="text-sm text-slate-500">Nhập đúng địa chỉ email của bạn để nhận mã OTP 6 chữ số xác nhận email trước khi đăng ký và nhận vé QR.</p>
                   </div>
                   
                   <form v-if="!otpSent" @submit.prevent="handleSendOtp" class="space-y-3">
@@ -720,27 +727,32 @@ const handleSubmitRegistration = async () => {
                       </div>
                       <button type="submit" :disabled="otpBusy || !otpEmail" class="btn-dark py-3">
                         <Loader2 v-if="otpBusy" class="h-4 w-4 animate-spin" />
-                        <template v-else>Xác thực / Tiếp tục</template>
+                        <template v-else>Gửi mã OTP</template>
                       </button>
+                    </div>
+
+                    <div class="rounded-xl bg-slate-50 border border-slate-200/80 p-3 text-xs text-slate-600 flex items-center gap-2">
+                      <ShieldCheck class="h-4 w-4 text-primary-600 shrink-0" />
+                      <span>Sau khi nhập mã OTP 6 số xác nhận chuẩn email, bạn sẽ điền <b>Họ tên & Số điện thoại</b> ở Bước 2 để hoàn tất đăng ký.</span>
                     </div>
 
                     <!-- Direct option: Đã có tài khoản, đăng nhập -->
                     <div class="flex items-center justify-between border-t border-slate-100 pt-2.5">
-                      <span class="text-xs text-slate-500">Đã có tài khoản trên hệ thống?</span>
+                      <span class="text-xs text-slate-500">Tài khoản Ban tổ chức / Quản trị?</span>
                       <button
                         type="button"
                         @click="switchToPassword"
                         class="text-xs font-bold text-primary-600 hover:text-primary-800 hover:underline flex items-center gap-1.5"
                       >
-                        <LogIn class="h-3.5 w-3.5" /> Đã có tài khoản, đăng nhập
+                        <LogIn class="h-3.5 w-3.5" /> Đăng nhập bằng mật khẩu
                       </button>
                     </div>
                   </form>
 
-                  <form v-else @submit.prevent="handleVerifyOtp" class="space-y-2">
+                  <form v-else @submit.prevent="handleVerifyOtp" class="space-y-2.5">
                     <div class="alert-success text-xs">
                       <span v-if="otpMessage">{{ otpMessage }}</span>
-                      <span v-else>Đã gửi mã tới <b>{{ otpEmail }}</b></span>
+                      <span v-else>Đã gửi mã OTP 6 số tới <b>{{ otpEmail }}</b>. Vui lòng kiểm tra hộp thư đến (hoặc mục Spam).</span>
                     </div>
                     <div class="flex gap-2">
                       <input
@@ -752,7 +764,7 @@ const handleSubmitRegistration = async () => {
                         class="field flex-1 text-center font-mono text-xl font-bold tracking-[0.5em]"
                       />
                       <button type="submit" :disabled="otpBusy || otpCode.length !== 6" class="btn-success px-5">
-                        <Loader2 v-if="otpBusy" class="h-4 w-4 animate-spin" /> Xác nhận
+                        <Loader2 v-if="otpBusy" class="h-4 w-4 animate-spin" /> Xác nhận OTP
                       </button>
                     </div>
                     <div class="flex flex-wrap items-center justify-between gap-2 pt-1">
@@ -765,7 +777,7 @@ const handleSubmitRegistration = async () => {
                         </button>
                       </div>
                       <button type="button" @click="switchToPassword" class="text-xs font-bold text-primary-600 hover:underline flex items-center gap-1">
-                        <LogIn class="h-3.5 w-3.5" /> Đã có tài khoản, đăng nhập
+                        <LogIn class="h-3.5 w-3.5" /> Đăng nhập bằng mật khẩu
                       </button>
                     </div>
                   </form>
@@ -842,10 +854,9 @@ const handleSubmitRegistration = async () => {
                 </template>
               </div>
 
-              <!-- Step 2: Details -->
-              <form @submit.prevent="handleSubmitRegistration" class="space-y-4">
-                <div v-if="!auth.isAuthenticated && (!isAutoApproveEvent || showQuickLoginInAuto)" class="divider" />
-                <h3 class="font-bold text-slate-900">Thông tin người tham dự</h3>
+              <!-- Step 2: Details (Chỉ hiển thị sau khi đã xác thực OTP chuẩn email) -->
+              <form v-else @submit.prevent="handleSubmitRegistration" class="space-y-4">
+                <h3 class="font-bold text-slate-900">Bước 2: Thông tin người tham dự</h3>
                 <div class="grid gap-4 sm:grid-cols-2">
                   <div>
                     <label class="field-label">Họ và tên <span class="text-rose-500">*</span></label>
@@ -856,8 +867,11 @@ const handleSubmitRegistration = async () => {
                     <input v-model="form.phone" type="tel" inputmode="tel" autocomplete="tel" required placeholder="0912 345 678" class="field" />
                   </div>
                   <div>
-                    <label class="field-label">Email nhận vé <span class="text-rose-500">*</span></label>
-                    <input v-model="form.email" type="email" inputmode="email" autocomplete="email" required placeholder="ban@example.com" class="field" />
+                    <label class="field-label flex items-center justify-between">
+                      <span>Email nhận vé <span class="text-rose-500">*</span></span>
+                      <span class="text-[11px] font-bold text-emerald-600">✓ Đã xác thực OTP</span>
+                    </label>
+                    <input :value="auth.user?.email || form.email" type="email" readonly class="field bg-slate-100 text-slate-600 cursor-not-allowed" />
                   </div>
                   <div>
                     <label class="field-label">Người giới thiệu</label>
