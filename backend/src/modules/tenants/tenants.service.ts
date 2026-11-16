@@ -17,7 +17,7 @@ import {
 const FREE_EVENT_LIMIT = 3;
 
 const ROLE_CONFIG: Record<string, { permissionCodes: string[]; can_invite: number; can_approve: number; can_scan: number; can_view_report: number }> = {
-  INVITER: { permissionCodes: ['invite:create', 'registrations:view_own', 'registrations:approve'], can_invite: 1, can_approve: 1, can_scan: 0, can_view_report: 0 },
+  INVITER: { permissionCodes: ['invite:create', 'registrations:view_own'], can_invite: 1, can_approve: 0, can_scan: 0, can_view_report: 0 },
   APPROVER: { permissionCodes: ['registrations:view_own', 'registrations:approve'], can_invite: 0, can_approve: 1, can_scan: 0, can_view_report: 0 },
   SCANNER: { permissionCodes: ['tickets:scan'], can_invite: 0, can_approve: 0, can_scan: 1, can_view_report: 0 },
   REPORTER: { permissionCodes: ['reports:view'], can_invite: 0, can_approve: 0, can_scan: 0, can_view_report: 1 },
@@ -739,7 +739,7 @@ export class TenantsService {
 
   static async getAttendees(tenantId: number, eventId: number, userId?: number) {
     const access = await this.requireTenantOrAssignedEvent(tenantId, eventId, userId);
-    const canSeeAll = access.isOwner || Boolean(access.quota?.can_approve) || Boolean(access.quota?.can_view_report);
+    const canSeeAll = access.isOwner || Boolean(access.quota?.can_view_report);
     const filterByReferrer = !canSeeAll && userId;
     return await query<any[]>(`
       SELECT r.id AS registration_id, r.full_name, r.phone, r.email, r.address, r.session_type,
@@ -846,6 +846,9 @@ export class TenantsService {
 
   static async listEventTeam(tenantId: number, eventId: number, userId?: number) {
     const access = await this.requireTenantOrAssignedEvent(tenantId, eventId, userId);
+    if (!access.isOwner) {
+      throw new Error('Bạn không có quyền xem danh sách nhân sự của sự kiện này.');
+    }
     return await query<any[]>(`
       SELECT u.id, u.name, u.email, u.phone, u.status, q.max_invites,
              q.is_enabled, q.can_invite, q.can_approve, q.can_scan, q.can_view_report

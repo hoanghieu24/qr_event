@@ -35,7 +35,7 @@ export class EventsService {
           (SELECT COUNT(*) FROM tickets t WHERE t.event_id = e.id AND t.status = 'USED') as total_checked_in,
           q.is_enabled as my_is_enabled,
           q.can_invite as my_can_invite,
-          GREATEST(COALESCE(q.can_approve, 0), COALESCE(q.can_invite, 0)) as my_can_approve,
+          COALESCE(q.can_approve, 0) as my_can_approve,
           q.can_scan as my_can_scan,
           q.can_view_report as my_can_view_report,
           q.max_invites as my_max_invites,
@@ -60,7 +60,7 @@ export class EventsService {
           CASE WHEN e.tenant_id = ? THEN 1 ELSE 0 END as is_owner_event,
           CASE WHEN e.tenant_id = ? THEN 1 ELSE COALESCE(q.can_scan, 0) END as my_can_scan,
           CASE WHEN e.tenant_id = ? THEN 1 ELSE COALESCE(q.can_invite, 0) END as my_can_invite,
-          CASE WHEN e.tenant_id = ? THEN 1 ELSE GREATEST(COALESCE(q.can_approve, 0), COALESCE(q.can_invite, 0)) END as my_can_approve,
+          CASE WHEN e.tenant_id = ? THEN 1 ELSE COALESCE(q.can_approve, 0) END as my_can_approve,
           CASE WHEN e.tenant_id = ? THEN 1 ELSE COALESCE(q.can_view_report, 0) END as my_can_view_report,
           q.max_invites as my_max_invites,
           (e.end_at < NOW()) as is_expired

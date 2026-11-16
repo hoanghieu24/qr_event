@@ -275,7 +275,7 @@ const initStaffAssignments = () => {
 const onMemberRoleChange = (member: any) => {
   if (member.role === 'INVITER') {
     member.can_invite = true;
-    member.can_approve = true; // Người mời có quyền duyệt khách
+    member.can_approve = false; // Người mời chỉ có quyền tạo link và mời khách
     member.can_scan = false;
     member.can_view_report = false;
   } else if (member.role === 'APPROVER') {
@@ -577,7 +577,17 @@ const loadPortal = async () => {
 const loadEventDetails = async (event: any) => {
   if (!event) return;
   selectedEvent.value = event;
-  activePanel.value = 'overview';
+  const isOwner = Number(event.is_owner_event) !== 0;
+
+  if (!isOwner) {
+    if (activePanel.value === 'team') {
+      activePanel.value = 'overview';
+    } else if (activePanel.value === 'scanner' && !event.my_can_scan) {
+      activePanel.value = 'overview';
+    } else if (activePanel.value === 'disputes' && !event.my_can_scan && !event.my_can_approve) {
+      activePanel.value = 'overview';
+    }
+  }
 
   // Khởi chạy nạp link mời & mã QR ngay lập tức cho mobile và desktop
   if (event.id) {
@@ -585,20 +595,30 @@ const loadEventDetails = async (event: any) => {
   }
 
   try {
-    const [attendeeRes, teamRes] = await Promise.allSettled([
-      api.get(`/tenants/portal/events/${event.id}/attendees`),
-      api.get(`/tenants/portal/events/${event.id}/team`)
-    ]);
+    const promises: Promise<any>[] = [api.get(`/tenants/portal/events/${event.id}/attendees`)];
+    if (isOwner) {
+      promises.push(api.get(`/tenants/portal/events/${event.id}/team`));
+    } else {
+      eventTeam.value = [];
+    }
+    const [attendeeRes, teamRes] = await Promise.allSettled(promises);
     if (attendeeRes.status === 'fulfilled') {
       attendees.value = attendeeRes.value.data.data || [];
     }
-    if (teamRes.status === 'fulfilled') {
+    if (teamRes && teamRes.status === 'fulfilled') {
       eventTeam.value = teamRes.value.data.data || [];
     }
   } catch (error: any) {
     errorMessage.value = explainError(error);
   }
 };
+
+const isOwnerEvent = computed(() => Number(selectedEvent.value?.is_owner_event) !== 0);
+const canManageTeam = computed(() => isOwnerEvent.value);
+const canScanQR = computed(() => isOwnerEvent.value || Boolean(selectedEvent.value?.my_can_scan));
+const canApproveAttendees = computed(() => isOwnerEvent.value || Boolean(selectedEvent.value?.my_can_approve));
+const canViewDisputes = computed(() => isOwnerEvent.value || Boolean(selectedEvent.value?.my_can_scan) || Boolean(selectedEvent.value?.my_can_approve));
+const canDeleteAttendees = computed(() => isOwnerEvent.value || Boolean(selectedEvent.value?.my_can_approve));
 
 const syncPackageCapacity = () => {
   const cap = Number(selectedPackageMaxAttendees.value) || 500;
@@ -3293,18 +3313,21 @@ onBeforeUnmount(stopScanner);
         <span v-if="attendees.length" class="nav-count">{{ attendees.length }}</span>
       </button>
       <button
+        v-if="canManageTeam"
         @click="stopScanner(); activePanel = 'team'"
         :class="['nav-item', activePanel === 'team' && 'nav-active']"
       >
         <ShieldCheck :size="18" />Đội ngũ
       </button>
       <button
+        v-if="canScanQR"
         @click="selectedScannerEventId = selectedEvent?.id || scannerEvents[0]?.id || null; activePanel = 'scanner'"
         :class="['nav-item', activePanel === 'scanner' && 'nav-active']"
       >
         <Camera :size="18" />Soát vé QR
       </button>
       <button
+        v-if="canViewDisputes"
         @click="stopScanner(); loadDisputes(); activePanel = 'disputes'"
         :class="['nav-item', activePanel === 'disputes' && 'nav-active']"
       >
@@ -3436,7 +3459,7 @@ onBeforeUnmount(stopScanner);
             </div>
           </section>
 
-          <template v-if="activePanel === 'scanner'">
+          <template v-if="activePanel === 'scanner' && canScanQR">
             <div class="page-heading">
               <div>
                 <span class="eyebrow">CỔNG SOÁT VÉ TRỰC TIẾP</span>
@@ -3581,7 +3604,7 @@ onBeforeUnmount(stopScanner);
             <p class="scanner-footnote"><ShieldCheck :size="15" />Mỗi vé QR chỉ được check-in thành công một lần.</p>
           </template>
 
-          <template v-else-if="activePanel === 'disputes'">
+          <template v-else-if="activePanel === 'disputes' && canViewDisputes">
             <div class="page-heading">
               <div>
                 <span class="eyebrow">BAN TRỌNG TÀI SỰ KIỆN</span>
@@ -3649,7 +3672,7 @@ onBeforeUnmount(stopScanner);
             </section>
           </template>
 
-          <template v-else-if="activePanel === 'team'">
+          <template v-else-if="activePanel === 'team' && canManageTeam">
             <div class="page-heading">
               <div>
                 <span class="eyebrow">NHÂN SỰ ĐƯỢC PHÂN QUYỀN</span>
@@ -3872,14 +3895,25 @@ onBeforeUnmount(stopScanner);
                   </div>
                 </div>
                 <div class="capacity-ring">
-                  <b>{{ selectedEvent.capacity ? Math.round((attendees.length / selectedEvent.capacity) * 100) : 0 }}%</b>
-                  <small>{{ attendees.length }}/{{ selectedEvent.capacity }} khách</small>
+                  <template v-if="isOwnerEvent">
+                    <b>{{ selectedEvent.capacity ? Math.round((attendees.length / selectedEvent.capacity) * 100) : 0 }}%</b>
+                    <small>{{ attendees.length }}/{{ selectedEvent.capacity }} khách</small>
+                  </template>
+                  <template v-else-if="selectedEvent.my_max_invites">
+                    <b>{{ Math.round((attendees.length / selectedEvent.my_max_invites) * 100) }}%</b>
+                    <small>{{ attendees.length }}/{{ selectedEvent.my_max_invites }} khách</small>
+                  </template>
+                  <template v-else>
+                    <b>{{ attendees.length }}</b>
+                    <small>khách mời</small>
+                  </template>
                 </div>
               </div>
 
               <!-- LỐI TẮT THAO TÁC NHANH MOBILE (QUICK ACTIONS) -->
-              <div class="grid grid-cols-3 gap-2.5 my-3">
+              <div class="grid gap-2.5 my-3" :class="canScanQR ? 'grid-cols-3' : 'grid-cols-2'">
                 <button
+                  v-if="canScanQR"
                   type="button"
                   @click="selectedScannerEventId = selectedEvent?.id || null; activePanel = 'scanner'"
                   class="p-3 rounded-2xl bg-gradient-to-br from-emerald-50 to-teal-50/80 border border-emerald-200/90 text-emerald-950 flex flex-col items-center justify-center gap-1.5 transition shadow-2xs hover:shadow-xs active:scale-98 cursor-pointer"
@@ -3917,27 +3951,33 @@ onBeforeUnmount(stopScanner);
               <div class="metric-grid">
                 <article class="metric-card">
                   <span class="metric-icon blue"><Users :size="19" /></span>
-                  <span class="metric-label">Đã đăng ký</span>
+                  <span class="metric-label">{{ isOwnerEvent ? 'Đã đăng ký' : 'Khách của bạn' }}</span>
                   <b>{{ attendees.length }}</b>
-                  <small>trên {{ selectedEvent.capacity }} chỗ</small>
+                  <small>{{ isOwnerEvent ? `trên ${selectedEvent.capacity} chỗ` : (selectedEvent.my_max_invites ? `hạn mức ${selectedEvent.my_max_invites} khách` : 'trên link của bạn') }}</small>
                 </article>
                 <article class="metric-card">
                   <span class="metric-icon green"><TicketCheck :size="19" /></span>
-                  <span class="metric-label">Đã duyệt / có vé</span>
+                  <span class="metric-label">{{ isOwnerEvent ? 'Đã duyệt / có vé' : 'Khách đã có vé' }}</span>
                   <b>{{ approvedCount }}</b>
                   <small>vé QR đã phát hành</small>
                 </article>
                 <article class="metric-card">
                   <span class="metric-icon violet"><QrCode :size="19" /></span>
-                  <span class="metric-label">Đã check-in</span>
+                  <span class="metric-label">{{ isOwnerEvent ? 'Đã check-in' : 'Khách đã vào cổng' }}</span>
                   <b>{{ checkedInCount }}</b>
                   <small>{{ approvedCount ? Math.round((checkedInCount / approvedCount) * 100) : 0 }}% khách có vé</small>
                 </article>
-                <article class="metric-card">
+                <article v-if="canManageTeam" class="metric-card">
                   <span class="metric-icon amber"><Users :size="19" /></span>
                   <span class="metric-label">Đội ngũ được gán</span>
                   <b>{{ eventTeam.length }}</b>
                   <small>nhân sự vận hành</small>
+                </article>
+                <article v-else-if="selectedEvent.my_max_invites" class="metric-card">
+                  <span class="metric-icon amber"><Users :size="19" /></span>
+                  <span class="metric-label">Hạn mức của bạn</span>
+                  <b>{{ selectedEvent.my_max_invites }}</b>
+                  <small>khách mời tối đa</small>
                 </article>
               </div>
 
@@ -4222,7 +4262,7 @@ onBeforeUnmount(stopScanner);
                           <span>Thiệp VIP</span>
                         </button>
                         <button
-                          v-if="attendee.ticket_status === 'USED'"
+                          v-if="attendee.ticket_status === 'USED' && canScanQR"
                           type="button"
                           class="px-2.5 py-1.5 rounded-xl bg-rose-50 text-rose-700 border border-rose-200 font-bold text-xs cursor-pointer"
                           @click="undoTenantAttendeeCheckin(attendee)"
@@ -4230,7 +4270,7 @@ onBeforeUnmount(stopScanner);
                           ↩ Hủy đã đi
                         </button>
                         <button
-                          v-if="attendee.registration_status === 'PENDING' || attendee.registration_status === 'PENDING_ADMIN'"
+                          v-if="canApproveAttendees && (attendee.registration_status === 'PENDING' || attendee.registration_status === 'PENDING_ADMIN')"
                           type="button"
                           class="px-3 py-1.5 rounded-xl bg-rose-50 text-rose-600 border border-rose-200 font-bold text-xs cursor-pointer"
                           @click="rejectTenantAttendee(attendee)"
@@ -4238,7 +4278,7 @@ onBeforeUnmount(stopScanner);
                           Từ chối
                         </button>
                         <button
-                          v-if="attendee.registration_status === 'PENDING' || attendee.registration_status === 'PENDING_ADMIN'"
+                          v-if="canApproveAttendees && (attendee.registration_status === 'PENDING' || attendee.registration_status === 'PENDING_ADMIN')"
                           type="button"
                           class="px-3.5 py-1.5 rounded-xl bg-emerald-600 text-white font-bold text-xs cursor-pointer"
                           @click="approveTenantAttendee(attendee.registration_id)"
@@ -4246,6 +4286,7 @@ onBeforeUnmount(stopScanner);
                           Duyệt vé
                         </button>
                         <button
+                          v-if="canDeleteAttendees"
                           type="button"
                           class="p-1.5 rounded-xl bg-slate-100 text-slate-500 hover:bg-rose-50 hover:text-rose-600 border border-slate-200 cursor-pointer"
                           title="Xóa khách này khỏi sự kiện"
@@ -4310,7 +4351,7 @@ onBeforeUnmount(stopScanner);
                                 <Sparkles :size="11" class="text-amber-600" />
                                 <span>Thiệp VIP</span>
                               </button>
-                              <template v-if="attendee.registration_status === 'PENDING' || attendee.registration_status === 'PENDING_ADMIN'">
+                              <template v-if="canApproveAttendees && (attendee.registration_status === 'PENDING' || attendee.registration_status === 'PENDING_ADMIN')">
                                 <button
                                   type="button"
                                   class="px-2.5 py-1 rounded-md bg-emerald-600 text-white font-bold text-[10px] hover:bg-emerald-700 cursor-pointer"
@@ -4327,7 +4368,7 @@ onBeforeUnmount(stopScanner);
                                 </button>
                               </template>
                               <button
-                                v-if="attendee.ticket_status === 'USED'"
+                                v-if="attendee.ticket_status === 'USED' && canScanQR"
                                 type="button"
                                 class="px-2 py-1 rounded-md bg-rose-50 text-rose-700 border border-rose-200 font-bold text-[10px] hover:bg-rose-100 cursor-pointer"
                                 title="Hủy trạng thái Đã vào cổng (nếu quét nhầm)"
@@ -4336,6 +4377,7 @@ onBeforeUnmount(stopScanner);
                                 ↩ Hủy đã đi
                               </button>
                               <button
+                                v-if="canDeleteAttendees"
                                 type="button"
                                 class="p-1 rounded-md bg-slate-100 text-slate-500 hover:bg-rose-50 hover:text-rose-600 border border-slate-200 cursor-pointer"
                                 title="Xóa khách này khỏi sự kiện"
@@ -4393,6 +4435,7 @@ onBeforeUnmount(stopScanner);
       </button>
 
       <button
+        v-if="canManageTeam"
         type="button"
         @click="stopScanner(); activePanel = 'team'"
         class="flex flex-col items-center justify-center flex-1 min-h-[50px] py-1 px-0.5 rounded-xl transition cursor-pointer"
@@ -4403,6 +4446,7 @@ onBeforeUnmount(stopScanner);
       </button>
 
       <button
+        v-if="canScanQR"
         type="button"
         @click="selectedScannerEventId = selectedEvent?.id || scannerEvents[0]?.id || null; activePanel = 'scanner'"
         class="flex flex-col items-center justify-center flex-1 min-h-[50px] py-1 px-0.5 rounded-xl transition cursor-pointer"
@@ -4413,6 +4457,7 @@ onBeforeUnmount(stopScanner);
       </button>
 
       <button
+        v-if="canViewDisputes"
         type="button"
         @click="stopScanner(); loadDisputes(); activePanel = 'disputes'"
         class="flex flex-col items-center justify-center flex-1 min-h-[50px] py-1 px-0.5 rounded-xl transition cursor-pointer relative"

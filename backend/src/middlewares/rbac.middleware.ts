@@ -63,7 +63,7 @@ export function requireEventCapability(capability: EventCapability) {
            WHERE event_id = ? AND staff_id = ? AND is_enabled = 1 LIMIT 1`,
           [eventId, req.user.id]
         );
-        if (assignments[0]?.allowed || (capability === 'can_approve' && assignments[0]?.can_invite)) {
+        if (assignments[0]?.allowed) {
           return next();
         }
       }
