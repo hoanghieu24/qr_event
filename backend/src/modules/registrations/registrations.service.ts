@@ -780,4 +780,114 @@ export class RegistrationsService {
 
     return { success: true, message: 'Đã từ chối đăng ký.' };
   }
+
+  // Undo check-in (reset ticket from USED back to VALID)
+  static async undoCheckin(regId: number, staffUser: any) {
+    const rows = await query<any[]>(
+      `SELECT r.*, e.tenant_id as event_tenant_id, t.id as ticket_id, t.status as ticket_status
+       FROM registrations r
+       JOIN events e ON r.event_id = e.id
+       LEFT JOIN tickets t ON t.registration_id = r.id
+       WHERE r.id = ?
+       LIMIT 1`,
+      [regId]
+    );
+
+    if (!rows.length) {
+      throw new Error('Thông tin đăng ký không tồn tại.');
+    }
+
+    const reg = rows[0];
+    const isEventOwnerAdmin =
+      staffUser.type === 'ADMIN' ||
+      (staffUser.type === 'TENANT_ADMIN' && Number(reg.event_tenant_id) === Number(staffUser.tenantId));
+
+    if (!isEventOwnerAdmin) {
+      const assignments = await query<any[]>(
+        `SELECT can_approve, can_scan FROM staff_event_quotas
+         WHERE event_id = ? AND staff_id = ? AND is_enabled = 1 LIMIT 1`,
+        [reg.event_id, staffUser.id]
+      );
+      if (!assignments[0]?.can_approve && !assignments[0]?.can_scan) {
+        throw new Error('Bạn chưa được phân quyền hoàn tác check-in cho sự kiện này.');
+      }
+    }
+
+    if (!reg.ticket_id) {
+      throw new Error('Khách này chưa được cấp vé QR.');
+    }
+
+    await query('DELETE FROM disputes WHERE ticket_id = ?', [reg.ticket_id]);
+    await query('DELETE FROM scan_logs WHERE ticket_id = ?', [reg.ticket_id]);
+    await query(
+      "UPDATE tickets SET status = 'VALID', used_at = NULL, used_by = NULL WHERE id = ?",
+      [reg.ticket_id]
+    );
+
+    try {
+      Realtime.emitDashboardRefresh();
+    } catch {}
+
+    return {
+      success: true,
+      message: `Đã hủy trạng thái "Đã đi" của khách "${reg.full_name}" (vé trở lại trạng thái Chưa đi).`,
+    };
+  }
+
+  // Delete registration completely (in case of erroneous registration/test entry)
+  static async deleteRegistration(regId: number, staffUser: any) {
+    const rows = await query<any[]>(
+      `SELECT r.*, e.tenant_id as event_tenant_id, t.id as ticket_id
+       FROM registrations r
+       JOIN events e ON r.event_id = e.id
+       LEFT JOIN tickets t ON t.registration_id = r.id
+       WHERE r.id = ?
+       LIMIT 1`,
+      [regId]
+    );
+
+    if (!rows.length) {
+      throw new Error('Thông tin đăng ký không tồn tại.');
+    }
+
+    const reg = rows[0];
+    const isEventOwnerAdmin =
+      staffUser.type === 'ADMIN' ||
+      (staffUser.type === 'TENANT_ADMIN' && Number(reg.event_tenant_id) === Number(staffUser.tenantId));
+
+    if (!isEventOwnerAdmin) {
+      const assignments = await query<any[]>(
+        `SELECT can_approve FROM staff_event_quotas
+         WHERE event_id = ? AND staff_id = ? AND is_enabled = 1 LIMIT 1`,
+        [reg.event_id, staffUser.id]
+      );
+      if (!assignments[0]?.can_approve) {
+        throw new Error('Bạn không có quyền xóa khách khỏi sự kiện này.');
+      }
+    }
+
+    if (reg.ticket_id) {
+      await query('DELETE FROM disputes WHERE ticket_id = ?', [reg.ticket_id]);
+      await query('DELETE FROM scan_logs WHERE ticket_id = ?', [reg.ticket_id]);
+      await query('DELETE FROM tickets WHERE id = ?', [reg.ticket_id]);
+    }
+
+    if (reg.invite_link_id) {
+      await query(
+        'UPDATE invite_links SET current_registrations = GREATEST(0, current_registrations - 1) WHERE id = ?',
+        [reg.invite_link_id]
+      );
+    }
+
+    await query('DELETE FROM registrations WHERE id = ?', [regId]);
+
+    try {
+      Realtime.emitDashboardRefresh();
+    } catch {}
+
+    return {
+      success: true,
+      message: `Đã xóa khách "${reg.full_name}" khỏi danh sách sự kiện.`,
+    };
+  }
 }

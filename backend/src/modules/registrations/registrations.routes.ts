@@ -15,5 +15,7 @@ router.get('/', authenticate, requirePermission('registrations:view_own'), Regis
 // Staff approves/rejects registrations
 router.put('/:id/approve', authenticate, requirePermission('registrations:approve'), RegistrationsController.approve);
 router.put('/:id/reject', authenticate, requirePermission('registrations:approve'), RegistrationsController.reject);
+router.put('/:id/undo-checkin', authenticate, RegistrationsController.undoCheckin);
+router.delete('/:id', authenticate, RegistrationsController.remove);
 
 export default router;

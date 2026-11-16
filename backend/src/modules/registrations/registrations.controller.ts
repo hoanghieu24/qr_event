@@ -62,4 +62,26 @@ export class RegistrationsController {
       res.status(statusCode).json({ success: false, message: error.message });
     }
   }
+
+  static async undoCheckin(req: Request, res: Response, next: NextFunction) {
+    try {
+      if (!req.user) return;
+      const regId = parseInt(String(req.params.id), 10);
+      const result = await RegistrationsService.undoCheckin(regId, req.user);
+      res.json({ success: true, data: result, message: result.message });
+    } catch (error: any) {
+      res.status(400).json({ success: false, message: error.message });
+    }
+  }
+
+  static async remove(req: Request, res: Response, next: NextFunction) {
+    try {
+      if (!req.user) return;
+      const regId = parseInt(String(req.params.id), 10);
+      const result = await RegistrationsService.deleteRegistration(regId, req.user);
+      res.json({ success: true, data: result, message: result.message });
+    } catch (error: any) {
+      res.status(400).json({ success: false, message: error.message });
+    }
+  }
 }

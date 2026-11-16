@@ -1122,6 +1122,36 @@ const adminApproveRegistration = async (regId: number) => {
   }
 };
 
+const adminUndoCheckin = async (att: any) => {
+  if (!confirm(`Xác nhận hủy trạng thái "Đã đi" của khách "${att.full_name}" (phòng trường hợp quét nhầm — vé sẽ trở lại trạng thái Chưa đi)?`)) return;
+  try {
+    await api.put(`/registrations/${att.registration_id}/undo-checkin`);
+    if (selectedEventReport.value?.event?.id) {
+      const res = await api.get(`/events/${selectedEventReport.value.event.id}/report`);
+      selectedEventReport.value = res.data.data;
+    }
+    await loadEvents();
+    await loadSummary();
+  } catch (e: any) {
+    alert(e.response?.data?.message || e.message);
+  }
+};
+
+const adminDeleteAttendee = async (att: any) => {
+  if (!confirm(`Xác nhận xóa khách "${att.full_name}" khỏi danh sách sự kiện này?`)) return;
+  try {
+    await api.delete(`/registrations/${att.registration_id}`);
+    if (selectedEventReport.value?.event?.id) {
+      const res = await api.get(`/events/${selectedEventReport.value.event.id}/report`);
+      selectedEventReport.value = res.data.data;
+    }
+    await loadEvents();
+    await loadSummary();
+  } catch (e: any) {
+    alert(e.response?.data?.message || e.message);
+  }
+};
+
 const exportToCsv = () => {
   if (!selectedEventReport.value?.attendees?.length) {
     alert('Không có dữ liệu khách để xuất báo cáo.');
@@ -3514,22 +3544,41 @@ const formatOtpTime = (dateStr: string) => {
                       {{ att.checked_in_at ? new Date(att.checked_in_at).toLocaleTimeString('vi-VN') : '—' }}
                     </td>
                     <td class="py-3 px-4 text-right whitespace-nowrap">
-                      <button
-                        v-if="att.ticket_code"
-                        @click="openAdminInviteCard(att, selectedEventReport?.event)"
-                        class="btn py-1 px-2 text-[11px] font-bold bg-amber-500 hover:bg-amber-600 text-white inline-flex items-center gap-1 shadow-xs mr-1.5"
-                        title="Tạo thiệp mời VIP cho khách này"
-                      >
-                        <Sparkles class="w-3 h-3 text-amber-100" />
-                        <span>Thiệp mời</span>
-                      </button>
-                      <button
-                        v-if="att.registration_status === 'PENDING_ADMIN' || att.registration_status === 'PENDING'"
-                        @click="adminApproveRegistration(att.registration_id)"
-                        class="btn btn-primary py-1 px-2.5 text-xs font-bold"
-                      >
-                        Duyệt cấp vé
-                      </button>
+                      <div class="inline-flex items-center justify-end gap-1.5">
+                        <button
+                          v-if="att.ticket_code"
+                          @click="openAdminInviteCard(att, selectedEventReport?.event)"
+                          class="btn py-1 px-2 text-[11px] font-bold bg-amber-500 hover:bg-amber-600 text-white inline-flex items-center gap-1 shadow-xs"
+                          title="Tạo thiệp mời VIP cho khách này"
+                        >
+                          <Sparkles class="w-3 h-3 text-amber-100" />
+                          <span>Thiệp mời</span>
+                        </button>
+                        <button
+                          v-if="att.ticket_status === 'USED'"
+                          type="button"
+                          @click="adminUndoCheckin(att)"
+                          class="px-2.5 py-1 rounded-lg bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 text-[11px] font-bold transition cursor-pointer"
+                          title="Hủy trạng thái Đã tham dự (trả về Chưa đi nếu quét nhầm)"
+                        >
+                          ↩ Hủy đã đi
+                        </button>
+                        <button
+                          v-if="att.registration_status === 'PENDING_ADMIN' || att.registration_status === 'PENDING'"
+                          @click="adminApproveRegistration(att.registration_id)"
+                          class="btn btn-primary py-1 px-2.5 text-xs font-bold"
+                        >
+                          Duyệt cấp vé
+                        </button>
+                        <button
+                          type="button"
+                          @click="adminDeleteAttendee(att)"
+                          class="p-1.5 rounded-lg bg-slate-100 hover:bg-rose-50 text-slate-500 hover:text-rose-600 border border-slate-200 hover:border-rose-200 transition cursor-pointer"
+                          title="Xóa khách này khỏi sự kiện"
+                        >
+                          <Trash2 class="w-3.5 h-3.5" />
+                        </button>
+                      </div>
                     </td>
                   </tr>
                   <tr v-if="filteredAttendees.length === 0">

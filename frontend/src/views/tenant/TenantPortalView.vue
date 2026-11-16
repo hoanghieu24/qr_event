@@ -90,6 +90,21 @@ const scanBusy = ref(false);
 let qrScanner: Html5Qrcode | null = null;
 let lastScannedCode = '';
 let lastScannedTime = 0;
+let lastSameQrSeenAt = 0;
+let isSameQrStillInFrame = false;
+let scannerClearTimer: number | null = null;
+
+const clearScannerNotification = (resetCodeLock = true) => {
+  if (scannerClearTimer !== null) {
+    clearTimeout(scannerClearTimer);
+    scannerClearTimer = null;
+  }
+  scannerResult.value = null;
+  if (resetCodeLock) {
+    lastScannedCode = '';
+    isSameQrStillInFrame = false;
+  }
+};
 
 // Dispute State (Gửi giải trình & Xử lý tranh chấp vé đã quét)
 const showDisputeModal = ref(false);
@@ -1265,6 +1280,7 @@ const onStaffEventChange = async () => {
 let activeScannerCleanup: (() => void) | null = null;
 
 const stopScanner = () => {
+  clearScannerNotification(true);
   if (activeScannerCleanup) {
     try {
       activeScannerCleanup();
@@ -1523,8 +1539,26 @@ const startScanner = async () => {
 
         decodeCurrentScanCanvas()
           .then((decodedText) => {
-            if (decodedText && scannerActive) {
-              submitScan(decodedText);
+            if (!scannerActive) return;
+            if (decodedText) {
+              const cleanDecoded = decodedText.trim();
+              if (cleanDecoded && cleanDecoded === lastScannedCode) {
+                lastSameQrSeenAt = Date.now();
+                isSameQrStillInFrame = true;
+              } else {
+                submitScan(decodedText);
+              }
+            } else if (lastScannedCode && !scanBusy.value) {
+              const nowMs = Date.now();
+              // Khi đưa camera ra khỏi mã QR (~0.9s liên tục không còn thấy mã QR và đã hiển thị tối thiểu 1.2s) -> tự động tắt thông báo
+              if (nowMs - lastScannedTime >= 1200 && nowMs - lastSameQrSeenAt >= 900) {
+                if (!showDisputeModal.value) {
+                  clearScannerNotification(true);
+                } else {
+                  lastScannedCode = '';
+                  isSameQrStillInFrame = false;
+                }
+              }
             }
           })
           .finally(() => {
@@ -1788,11 +1822,20 @@ const submitScan = async (code: string, isManual = false) => {
   const cleanCode = code.trim();
   if (!cleanCode) return;
   const now = Date.now();
-  if (!isManual && cleanCode === lastScannedCode && now - lastScannedTime < 3000) {
+  // Nếu camera vẫn đang giữ trên cùng 1 mã QR thì không quét lặp lại
+  if (!isManual && cleanCode === lastScannedCode) {
+    lastSameQrSeenAt = now;
+    isSameQrStillInFrame = true;
     return;
+  }
+  if (scannerClearTimer !== null) {
+    clearTimeout(scannerClearTimer);
+    scannerClearTimer = null;
   }
   lastScannedCode = cleanCode;
   lastScannedTime = now;
+  lastSameQrSeenAt = now;
+  isSameQrStillInFrame = true;
   scanBusy.value = true;
   disputeSent.value = false;
 
@@ -1805,6 +1848,11 @@ const submitScan = async (code: string, isManual = false) => {
     scannerResult.value = res.data.data;
     playScanTone(res.data.data?.result || 'SUCCESS');
     manualScanCode.value = '';
+    if (selectedEvent.value?.id && Number(selectedEvent.value.id) === Number(selectedScannerEventId.value)) {
+      api.get(`/tenants/portal/events/${selectedEvent.value.id}/attendees`)
+        .then((r) => { attendees.value = r.data.data || []; })
+        .catch(() => {});
+    }
   } catch (error: any) {
     const data = error.response?.data?.data;
     if (data) {
@@ -1818,12 +1866,24 @@ const submitScan = async (code: string, isManual = false) => {
       playScanTone('INVALID');
     }
   } finally {
+    // Tự động tắt thông báo sau tối đa 10 giây (hoặc sớm hơn ngay khi đưa camera ra khỏi mã QR)
+    scannerClearTimer = window.setTimeout(() => {
+      scannerClearTimer = null;
+      if (!showDisputeModal.value) {
+        scannerResult.value = null;
+      }
+      if (!isSameQrStillInFrame || Date.now() - lastSameQrSeenAt >= 900) {
+        lastScannedCode = '';
+        isSameQrStillInFrame = false;
+      }
+    }, 10000);
+
     if (isManual) {
       scanBusy.value = false;
     } else {
       window.setTimeout(() => {
         scanBusy.value = false;
-      }, 1500);
+      }, 600);
     }
   }
 };
@@ -1975,6 +2035,42 @@ const rejectTenantAttendee = async (attendee: any) => {
   try {
     await api.put(`/registrations/${attendee.registration_id}/reject`, { reason });
     if (selectedEvent.value) await loadEventDetails(selectedEvent.value);
+  } catch (error: any) {
+    errorMessage.value = explainError(error);
+  }
+};
+
+const undoTenantAttendeeCheckin = async (attendee: any, keepPanel = true) => {
+  const regId = attendee.registration_id || attendee.id;
+  if (!window.confirm(`Xác nhận hủy trạng thái "Đã vào cổng" của khách "${attendee.full_name}" (vé sẽ trở lại trạng thái Chưa check-in)?`)) return;
+  try {
+    await api.put(`/registrations/${regId}/undo-checkin`);
+    if (selectedEvent.value) {
+      const currentPanel = activePanel.value;
+      await loadEventDetails(selectedEvent.value);
+      if (keepPanel) activePanel.value = currentPanel;
+    }
+    if (selectedStaffEventId.value) {
+      await loadStaffInviteDetails(selectedStaffEventId.value);
+    }
+  } catch (error: any) {
+    errorMessage.value = explainError(error);
+  }
+};
+
+const deleteTenantAttendee = async (attendee: any, keepPanel = true) => {
+  const regId = attendee.registration_id || attendee.id;
+  if (!window.confirm(`Xác nhận xóa khách "${attendee.full_name}" khỏi danh sách sự kiện này?`)) return;
+  try {
+    await api.delete(`/registrations/${regId}`);
+    if (selectedEvent.value) {
+      const currentPanel = activePanel.value;
+      await loadEventDetails(selectedEvent.value);
+      if (keepPanel) activePanel.value = currentPanel;
+    }
+    if (selectedStaffEventId.value) {
+      await loadStaffInviteDetails(selectedStaffEventId.value);
+    }
   } catch (error: any) {
     errorMessage.value = explainError(error);
   }
@@ -4115,7 +4211,7 @@ onBeforeUnmount(stopScanner);
                         <span v-else class="text-slate-400 text-[11px]">Chưa check-in</span>
                       </div>
 
-                      <div class="flex items-center justify-end gap-1.5 pt-1 border-t border-slate-100">
+                      <div class="flex flex-wrap items-center justify-end gap-1.5 pt-1 border-t border-slate-100">
                         <button
                           type="button"
                           class="px-2.5 py-1.5 rounded-xl bg-amber-50 text-amber-800 border border-amber-200 font-bold text-xs flex items-center gap-1 cursor-pointer"
@@ -4124,6 +4220,14 @@ onBeforeUnmount(stopScanner);
                         >
                           <Sparkles :size="12" class="text-amber-600" />
                           <span>Thiệp VIP</span>
+                        </button>
+                        <button
+                          v-if="attendee.ticket_status === 'USED'"
+                          type="button"
+                          class="px-2.5 py-1.5 rounded-xl bg-rose-50 text-rose-700 border border-rose-200 font-bold text-xs cursor-pointer"
+                          @click="undoTenantAttendeeCheckin(attendee)"
+                        >
+                          ↩ Hủy đã đi
                         </button>
                         <button
                           v-if="attendee.registration_status === 'PENDING' || attendee.registration_status === 'PENDING_ADMIN'"
@@ -4140,6 +4244,14 @@ onBeforeUnmount(stopScanner);
                           @click="approveTenantAttendee(attendee.registration_id)"
                         >
                           Duyệt vé
+                        </button>
+                        <button
+                          type="button"
+                          class="p-1.5 rounded-xl bg-slate-100 text-slate-500 hover:bg-rose-50 hover:text-rose-600 border border-slate-200 cursor-pointer"
+                          title="Xóa khách này khỏi sự kiện"
+                          @click="deleteTenantAttendee(attendee)"
+                        >
+                          <Trash2 :size="13" />
                         </button>
                       </div>
                     </div>
@@ -4214,6 +4326,23 @@ onBeforeUnmount(stopScanner);
                                   Từ chối
                                 </button>
                               </template>
+                              <button
+                                v-if="attendee.ticket_status === 'USED'"
+                                type="button"
+                                class="px-2 py-1 rounded-md bg-rose-50 text-rose-700 border border-rose-200 font-bold text-[10px] hover:bg-rose-100 cursor-pointer"
+                                title="Hủy trạng thái Đã vào cổng (nếu quét nhầm)"
+                                @click="undoTenantAttendeeCheckin(attendee)"
+                              >
+                                ↩ Hủy đã đi
+                              </button>
+                              <button
+                                type="button"
+                                class="p-1 rounded-md bg-slate-100 text-slate-500 hover:bg-rose-50 hover:text-rose-600 border border-slate-200 cursor-pointer"
+                                title="Xóa khách này khỏi sự kiện"
+                                @click="deleteTenantAttendee(attendee)"
+                              >
+                                <Trash2 :size="12" />
+                              </button>
                             </div>
                           </td>
                         </tr>
