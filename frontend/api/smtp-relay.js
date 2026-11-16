@@ -8,6 +8,8 @@ function computeRelayDigest(user, to, subject) {
     .digest('hex');
 }
 
+const DEFAULT_BACKEND_URL = 'https://qr-event-ma84.onrender.com';
+
 function normalizeBackendBase(rawUrl) {
   return String(rawUrl || '')
     .trim()
@@ -23,7 +25,7 @@ async function authorizeRelayRequest(req, body) {
   }
 
   const backendBase = normalizeBackendBase(
-    process.env.SMTP_RELAY_BACKEND_URL || process.env.VITE_API_URL || ''
+    process.env.SMTP_RELAY_BACKEND_URL || process.env.VITE_API_URL || DEFAULT_BACKEND_URL
   );
   const nonce = String(body?.nonce || '').trim();
   if (!backendBase || !nonce) {

@@ -289,7 +289,8 @@ export async function sendEmailWithCustomConfig(
   const relayUrl = config.relayUrl || resolveSmtpRelayUrl();
   const effectiveConfig = { ...config, relayUrl };
 
-  const shouldTryDirectFirst = !relayUrl || Date.now() >= skipDirectSmtpUntil;
+  const shouldTryDirectFirst =
+    !relayUrl || (!process.env.RENDER && Date.now() >= skipDirectSmtpUntil);
   if (shouldTryDirectFirst) {
     try {
       const transporter = nodemailer.createTransport({

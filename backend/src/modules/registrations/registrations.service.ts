@@ -47,7 +47,7 @@ export class RegistrationsService {
   }): Promise<{ sent: boolean; simulated: boolean; error?: string }> {
     try {
       const enabled = await shouldSendApprovedEmail();
-      if (!enabled) {
+      if (!enabled && !params.isAutoApproved) {
         return { sent: false, simulated: false };
       }
 
@@ -436,8 +436,15 @@ export class RegistrationsService {
 
     // Post-commit emails & realtime events (outside DB transaction lock)
     if (txResult.mode === 'AUTO') {
-      await this.sendApprovedTicketEmail({
-        to: data.email,
+      const qrDataUrl = await QRCode.toDataURL(txResult.ticketCode, {
+        errorCorrectionLevel: 'H',
+        margin: 2,
+        width: 360,
+        color: { dark: '#0f172a', light: '#ffffff' },
+      });
+
+      const mailRes = await this.sendApprovedTicketEmail({
+        to: cleanEmail,
         fullName: data.full_name,
         eventName: invite.event_name,
         eventLocation: txResult.eventLocation,
@@ -457,7 +464,7 @@ export class RegistrationsService {
           customerId: actualCustomerId,
           fullName: data.full_name,
           phone: data.phone,
-          email: data.email,
+          email: cleanEmail,
           referrerId: invite.referrer_id,
           referrerName: txResult.referrerName,
           status: 'APPROVED',
@@ -482,7 +489,12 @@ export class RegistrationsService {
         referrerName: txResult.referrerName,
       });
 
-      return txResult.payload;
+      return {
+        ...txResult.payload,
+        qr_image: qrDataUrl,
+        email_sent: mailRes.sent,
+        email_error: mailRes.error || null,
+      };
     }
 
     if (txResult.referrer?.email) {

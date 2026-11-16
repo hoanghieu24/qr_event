@@ -41,6 +41,9 @@ const error = ref('');
 const actionChosen = ref<'none' | 'confirm' | 'decline'>('none');
 const isSubmitting = ref(false);
 const registrationDone = ref(false);
+const registrationResult = ref<any>(null);
+const showQuickLoginInAuto = ref(false);
+const isAutoApproveEvent = computed(() => event.value?.approval_mode === 'AUTO');
 
 const authMode = ref<'otp' | 'password'>('otp');
 const otpEmail = ref('');
@@ -320,9 +323,11 @@ const handleSubmitRegistration = async () => {
   try {
     const activeToken = inviteData.value?.token || token;
     const res = await api.post('/registrations', { token: activeToken, ...form.value });
-    if (res.data?.data?.token && res.data?.data?.user) {
-      auth.setSession(res.data.data.token, res.data.data.user);
+    const resultData = res.data?.data || {};
+    if (resultData.token && resultData.user) {
+      auth.setSession(resultData.token, resultData.user);
     }
+    registrationResult.value = resultData;
     registrationDone.value = true;
     window.scrollTo({ top: 0, behavior: 'smooth' });
   } catch (err: any) {
@@ -431,15 +436,54 @@ const handleSubmitRegistration = async () => {
 
         <!-- SUCCESS -->
         <section v-if="registrationDone" class="card mt-5 animate-scale-in overflow-hidden sm:mt-6">
-          <div class="bg-gradient-to-br from-emerald-500 to-emerald-600 px-6 py-8 text-center text-white">
+          <div class="bg-gradient-to-br from-emerald-500 to-emerald-600 px-6 py-7 text-center text-white">
             <div class="mx-auto grid h-16 w-16 place-items-center rounded-full bg-white/20 ring-8 ring-white/10"><PartyPopper class="h-8 w-8" /></div>
-            <h2 class="mt-4 text-xl font-extrabold">Đã gửi đăng ký!</h2>
+            <h2 class="mt-4 text-xl font-extrabold">
+              {{ registrationResult?.status === 'APPROVED' ? 'Đăng ký thành công! Vé QR đã kích hoạt' : 'Đã gửi đăng ký!' }}
+            </h2>
             <p class="mx-auto mt-1.5 max-w-sm text-sm text-emerald-50">
-              <b>{{ inviteData.referrer?.name }}</b> sẽ xét duyệt và cấp vé QR cho bạn. Bạn sẽ nhận email khi vé sẵn sàng.
+              <template v-if="registrationResult?.status === 'APPROVED'">
+                Vé QR tham dự sự kiện đã được cấp tự động cho bạn và gửi tới email <b>{{ form.email }}</b>.
+              </template>
+              <template v-else>
+                <b>{{ inviteData.referrer?.name }}</b> sẽ xét duyệt và cấp vé QR cho bạn. Bạn sẽ nhận email khi vé sẵn sàng.
+              </template>
             </p>
           </div>
           <div class="card-pad space-y-4">
-            <ol class="space-y-3 text-sm">
+            <template v-if="registrationResult?.status === 'APPROVED'">
+              <div class="flex flex-col items-center text-center p-4 rounded-2xl bg-slate-50 border border-slate-200 space-y-3">
+                <span class="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-emerald-100 text-emerald-800 text-xs font-bold">
+                  <Check class="h-3.5 w-3.5" /> Vé hợp lệ · Xuất trình tại cổng check-in
+                </span>
+                <img
+                  v-if="registrationResult?.qr_image"
+                  :src="registrationResult.qr_image"
+                  alt="Mã QR Vé Tham Dự"
+                  class="w-52 h-52 object-contain bg-white p-3 rounded-2xl border border-slate-200 shadow-xs"
+                />
+                <div class="font-mono text-sm font-black tracking-wider text-slate-900 bg-white px-3.5 py-1.5 rounded-xl border border-slate-200">
+                  {{ registrationResult?.code }}
+                </div>
+                <a
+                  v-if="registrationResult?.qr_image"
+                  :href="registrationResult.qr_image"
+                  :download="`Ve-QR-${registrationResult.code || 'EventGo'}.png`"
+                  class="btn-secondary btn-sm"
+                >
+                  Tải ảnh vé QR về máy
+                </a>
+              </div>
+
+              <div v-if="registrationResult?.email_sent" class="alert-success text-xs">
+                <span>📧 Hệ thống cũng đã gửi bản sao vé QR này về email <b>{{ form.email }}</b> của bạn (kiểm tra thêm hộp thư Spam/Quảng cáo nếu chưa thấy).</span>
+              </div>
+              <div v-else class="rounded-xl border border-amber-200 bg-amber-50 px-3.5 py-3 text-xs text-amber-900 leading-relaxed">
+                <b>Lưu ý:</b> Vé QR của bạn đã được kích hoạt hợp lệ ở trên, nhưng gửi email tự động tạm thời bị gián đoạn{{ registrationResult?.email_error ? ` (${registrationResult.email_error})` : '' }}. Bạn hãy <b>tải ảnh vé QR ở trên về máy</b> hoặc bấm <b>Xem vé của tôi</b> bên dưới để dùng khi check-in nhé!
+              </div>
+            </template>
+
+            <ol v-else class="space-y-3 text-sm">
               <li class="flex items-center gap-3"><span class="grid h-7 w-7 place-items-center rounded-full bg-emerald-100 text-emerald-700"><Check class="h-4 w-4" /></span><span class="font-medium text-slate-900">Gửi thông tin đăng ký</span></li>
               <li class="flex items-center gap-3"><span class="grid h-7 w-7 place-items-center rounded-full bg-amber-100 text-amber-700"><Clock class="h-4 w-4" /></span><span class="text-slate-600">Chờ người giới thiệu duyệt</span></li>
               <li class="flex items-center gap-3"><span class="grid h-7 w-7 place-items-center rounded-full bg-slate-100 text-slate-400"><Ticket class="h-4 w-4" /></span><span class="text-slate-400">Nhận vé QR & check-in tại cổng</span></li>
@@ -634,8 +678,25 @@ const handleSubmitRegistration = async () => {
                 <button type="button" @click="auth.logout()" class="btn-secondary btn-sm shrink-0"><LogOut class="h-3.5 w-3.5" /> Thoát</button>
               </div>
 
+              <!-- Auto-approve fast-track notice -->
+              <div
+                v-if="isAutoApproveEvent && !auth.isAuthenticated"
+                class="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-emerald-200 bg-emerald-50/80 px-3.5 py-2.5 text-xs text-emerald-900"
+              >
+                <span class="font-semibold">
+                  ⚡ <b>Cấp vé QR tự động:</b> Chỉ cần điền thông tin bên dưới, hệ thống sẽ cấp ngay mã QR và gửi về Email của bạn!
+                </span>
+                <button
+                  type="button"
+                  @click="showQuickLoginInAuto = !showQuickLoginInAuto"
+                  class="font-bold text-primary-700 underline cursor-pointer shrink-0"
+                >
+                  {{ showQuickLoginInAuto ? 'Ẩn đăng nhập' : 'Đã có tài khoản?' }}
+                </button>
+              </div>
+
               <!-- Step 1: Authentication (OTP or Password) -->
-              <div v-if="!auth.isAuthenticated" class="space-y-4">
+              <div v-if="!auth.isAuthenticated && (!isAutoApproveEvent || showQuickLoginInAuto)" class="space-y-4">
                 <!-- MODE 1: OTP Flow -->
                 <template v-if="authMode === 'otp'">
                   <div>
@@ -783,7 +844,7 @@ const handleSubmitRegistration = async () => {
 
               <!-- Step 2: Details -->
               <form @submit.prevent="handleSubmitRegistration" class="space-y-4">
-                <div v-if="!auth.isAuthenticated" class="divider" />
+                <div v-if="!auth.isAuthenticated && (!isAutoApproveEvent || showQuickLoginInAuto)" class="divider" />
                 <h3 class="font-bold text-slate-900">Thông tin người tham dự</h3>
                 <div class="grid gap-4 sm:grid-cols-2">
                   <div>

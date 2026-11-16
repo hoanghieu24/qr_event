@@ -48,15 +48,21 @@ function endTrackRequest() {
  * Silently pings /health so a sleeping Render container starts booting
  * while the user is reading the page instead of waiting after submit.
  */
-export function warmUpBackend(minIntervalMs = 10 * 60 * 1000) {
+export function warmUpBackend(minIntervalMs = 9 * 60 * 1000) {
   const now = Date.now();
   if (now - lastWarmPingAt < minIntervalMs) return;
   lastWarmPingAt = now;
   try {
-    void fetch(healthURL, { method: 'GET', cache: 'no-store', keepalive: true }).catch(() => {});
+    void fetch(`${healthURL}?t=${now}`, { method: 'GET', cache: 'no-store', keepalive: true }).catch(() => {});
   } catch {
     // Ignore silent pre-warm failures
   }
+}
+
+if (typeof window !== 'undefined') {
+  setInterval(() => {
+    warmUpBackend(9 * 60 * 1000);
+  }, 10 * 60 * 1000);
 }
 
 const api = axios.create({

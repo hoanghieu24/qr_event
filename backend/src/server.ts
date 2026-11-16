@@ -156,6 +156,39 @@ async function runStartupMaintenance() {
   }
 }
 
+const KEEP_ALIVE_INTERVAL_MS = 10 * 60 * 1000; // 10 minutes
+
+function startSelfKeepAlivePing() {
+  const isProdOrRender = ENV.NODE_ENV === 'production' || Boolean(process.env.RENDER);
+  if (!isProdOrRender) return;
+
+  const rawPublicUrl = (
+    process.env.RENDER_EXTERNAL_URL ||
+    (ENV.APP_URL && !ENV.APP_URL.includes('localhost') ? ENV.APP_URL : '') ||
+    'https://qr-event-ma84.onrender.com'
+  )
+    .trim()
+    .replace(/\/+$/, '');
+
+  const timer = setInterval(async () => {
+    try {
+      const res = await fetch(`${rawPublicUrl}/health?t=${Date.now()}`, {
+        method: 'GET',
+        headers: { 'Cache-Control': 'no-store', 'User-Agent': 'EventGo-SelfKeepAlive/1.0' },
+        signal: AbortSignal.timeout(15000),
+      });
+      if (!res.ok) {
+        console.warn(`[KeepAlive] Self-ping returned HTTP ${res.status}`);
+      }
+    } catch (err: any) {
+      console.warn('[KeepAlive] Self-ping warning:', err?.message || err);
+    }
+  }, KEEP_ALIVE_INTERVAL_MS);
+
+  timer.unref?.();
+  console.log(`⏰ Đã bật chế độ tự ping chống ngủ đông mỗi 10 phút tới ${rawPublicUrl}/health`);
+}
+
 async function bootstrap() {
   try {
     const httpServer = http.createServer(app);
@@ -172,6 +205,7 @@ async function bootstrap() {
       console.log(`📡 Chế độ môi trường: ${ENV.NODE_ENV}`);
       console.log(`📧 Cấu hình SMTP: ${ENV.SMTP_HOST}:${ENV.SMTP_PORT}`);
       console.log(`⚡ WebSocket / Socket.IO Realtime Server đã khởi động thành công!`);
+      startSelfKeepAlivePing();
     });
 
     // Connect and auto-init database concurrently; run non-critical maintenance afterwards
